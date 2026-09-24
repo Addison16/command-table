@@ -155,8 +155,14 @@ describe('local transactions and recovery', () => {
     const legacy: Partial<typeof profile> = { ...profile, rotations: { seat: true } };
     delete legacy.tableLayout;
     delete legacy.autoTableLayout;
+    delete legacy.theme;
     await a.put('profile', legacy);
-    expect(await a.profile()).toEqual({ ...legacy, tableLayout: 'upright', autoTableLayout: true });
+    expect(await a.profile()).toEqual({
+      ...legacy,
+      tableLayout: 'upright',
+      autoTableLayout: true,
+      theme: 'system',
+    });
     await a.put('profile', { ...legacy, tableLayout: 'shared', autoTableLayout: false });
     const reopened = new Repository('b', a.databaseName);
     await reopened.open();

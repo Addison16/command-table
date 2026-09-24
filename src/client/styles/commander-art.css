@@ -1,4 +1,28 @@
 @layer components {
+  /* Art is never inverted. Keep its dark scrim and readable light overlays in either theme. */
+  .with-commander-art {
+    background: var(--tile-gradient);
+    color: var(--text);
+    --player-ink: var(--player);
+    --player-ink-weight: 100%;
+    --text: #f3f0e8;
+    --muted: #b6c0ce;
+    --gold: #d6b66a;
+    --line: #ffffff14;
+    --gain: #b2d8be;
+    --loss: #efb9aa;
+    --warning-text: #efc89a;
+    --warning-line: #e5b47a60;
+    --delta-background: #111721;
+    --tile-gradient: linear-gradient(135deg, #18212c, #111721);
+    --status-commander: #d5c49d;
+    --status-poison: #b6d2bc;
+    --status-tax: #c2c9de;
+    --status-warning: #ffd0a3;
+    --status-warning-line: #e6a267a0;
+    --status-gradient: linear-gradient(155deg, #242933f5, #10151df5);
+    --status-warning-gradient: linear-gradient(155deg, #433025fa, #251c19fa);
+  }
   .commander-backdrop {
     position: absolute;
     inset: 0;
@@ -43,7 +67,7 @@
     border-radius: 10px;
     padding: 10px;
     margin-bottom: 16px;
-    background: #090d1480;
+    background: var(--surface-inset);
   }
   .commander-credits a {
     display: flex;

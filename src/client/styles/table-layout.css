@@ -11,12 +11,12 @@
     gap: 12px;
     padding: 18px 12px;
     text-align: center;
-    background: #101722;
+    background: var(--surface);
     border: 1px solid var(--line);
   }
   .layout-option.selected {
     border-color: var(--gold);
-    background: #d6b66a0a;
+    background: var(--accent-wash);
   }
   .layout-option strong {
     font-size: 13px;
@@ -34,30 +34,30 @@
     width: 100%;
     max-width: 180px;
     aspect-ratio: 1.8;
-    border: 1px solid #7d8a9c;
+    border: 1px solid var(--subtle-text);
     border-radius: 10px;
     padding: 5px;
-    background: #070c14;
+    background: var(--input-background);
   }
   .layout-preview > span {
     display: grid;
     place-items: center;
     border-radius: 4px;
-    color: #e3cf99;
+    color: color-mix(in srgb, #e3cf99 var(--player-ink-weight), #17130d);
     background: #a0864e38;
     font-size: 9px;
     white-space: nowrap;
   }
   .layout-preview > span:nth-child(2) {
-    color: #9cc9f9;
+    color: color-mix(in srgb, #9cc9f9 var(--player-ink-weight), #17130d);
     background: #36577750;
   }
   .layout-preview > span:nth-child(3) {
-    color: #ccb6f1;
+    color: color-mix(in srgb, #ccb6f1 var(--player-ink-weight), #17130d);
     background: #59477c50;
   }
   .layout-preview > span:nth-child(4) {
-    color: #f4bd9f;
+    color: color-mix(in srgb, #f4bd9f var(--player-ink-weight), #17130d);
     background: #79544050;
   }
   .layout-preview.shared > span:nth-child(-n + 2) > span {
@@ -73,8 +73,8 @@
     gap: 4px;
   }
   .shared-table .life-controls .hold {
-    --life-control-surface: color-mix(in srgb, var(--player) 5%, transparent);
-    --life-control-ring: color-mix(in srgb, var(--player) 12%, transparent);
+    --life-control-surface: color-mix(in srgb, var(--player-ink, var(--player)) 5%, transparent);
+    --life-control-ring: color-mix(in srgb, var(--player-ink, var(--player)) 12%, transparent);
     height: 100%;
     min-height: 52px;
     align-self: stretch;
@@ -182,20 +182,21 @@
       font-size: 10px;
       padding: 2px;
       border-radius: 3px;
-      background: #111721;
+      background: var(--delta-background);
     }
     .shared-table .life-delta:empty {
       display: none;
     }
   }
   @media (orientation: landscape) and (max-width: 650px) {
-    .board.shared-table.seats-5,
-    .board.shared-table.seats-6,
-    .board.shared-table.seats-7,
-    .board.shared-table.seats-8 {
+    /* Dense upright tables need the same room for life totals and tap targets. */
+    .board[class].seats-5,
+    .board[class].seats-6,
+    .board[class].seats-7,
+    .board[class].seats-8 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       grid-template-rows: none;
-      grid-auto-rows: minmax(115px, 1fr);
+      grid-auto-rows: minmax(142px, 1fr);
     }
     .shared-table.seats-5 .player-tile,
     .shared-table.seats-6 .player-tile,

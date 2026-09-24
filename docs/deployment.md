@@ -128,7 +128,7 @@ The primary image name is now `commandtable`. To switch an existing installation
 MTG_IMAGE=ghcr.io/addison16/commandtable:latest
 ```
 
-This is a one-time image-address change using the same v0.2.0 runtime, with no version bump or game reset. Keep the same Compose project and service names, data volume, configuration and public origin; do not create a replacement stack or volume. The old image address will remain a compatibility alias, and future releases will be published to both image names. The GitHub source repository remains `Addison16/commanders-table`.
+The original image-address migration preserved the v0.2.0 runtime. Both names now receive the same stable application updates. Keep the same Compose project and service names, data volume, configuration and public origin; do not create a replacement stack or volume. The old image address remains a compatibility alias. The GitHub source repository remains `Addison16/commanders-table`.
 
 1. [Back up](#back-up) the running server and copy the verified file out. Export important browser-local games separately.
 2. Keep the existing settings and use `MTG_IMAGE=ghcr.io/addison16/commandtable:latest` to follow stable releases, then run:
@@ -144,7 +144,7 @@ This is a one-time image-address change using the same v0.2.0 runtime, with no v
 
 Pulling `latest` downloads an image; it does not replace a running container. `up -d` applies the downloaded image while keeping the named volume. Docker managers can detect a changed tag, but unattended updates require an updater you configure. Do not replace your configured `.env` with the release example during updates.
 
-For a pinned installation, set `MTG_IMAGE` to a version such as `ghcr.io/addison16/commandtable:0.2.0` or an image digest, then use the same `pull` and `up -d` commands. Changing a version pin is intentional; `latest` remains the standard install/update path.
+For a pinned installation, set `MTG_IMAGE` to a version such as `ghcr.io/addison16/commandtable:0.3.0` or an image digest, then use the same `pull` and `up -d` commands. Changing a version pin is intentional; `latest` remains the standard install/update path.
 
 Migrations execute in transactions. An older app refuses a newer database schema, so rollback can require the matching pre-update backup. Retain the previous image or version/digest and its configuration until the update is verified.
 

@@ -81,6 +81,58 @@ test('shared table faces both sides, enlarges touch controls and remembers local
 type Draw = { a: number; b: number; c: number; d: number; x: number };
 type Probe = Window & { diceDraw: Record<string, Draw>; diceSample: number };
 
+test('eight-player narrow landscape tables keep life numbers separate from reachable controls', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 568, height: 320 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Set up a game', exact: true }).click();
+  await page.getByRole('button', { name: '8', exact: true }).click();
+  await page.getByRole('button', { name: 'Let’s play', exact: true }).click();
+  for (const layout of ['All facing me', 'Shared table']) {
+    await openLayout(page);
+    await page.getByRole('button', { name: new RegExp(`^${layout}`) }).click();
+    await page.getByRole('button', { name: 'Back to game', exact: true }).click();
+    // Measure after the seat-facing transition finishes, not mid-rotation.
+    for (const [index, content] of (await page.locator('.tile-content').all()).entries()) {
+      await expect(content).toHaveCSS(
+        'transform',
+        layout === 'Shared table' && index < 4 ? 'matrix(-1, 0, 0, -1, 0, 0)' : 'none',
+      );
+    }
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      for (const tile of await page.locator('.player-tile').all()) {
+        await tile.scrollIntoViewIfNeeded();
+        const bounds = (await tile.boundingBox())!;
+        const number = (await tile.locator('.life-total').boundingBox())!;
+        const buttons = await tile.locator('.hold').all();
+        const controls = await Promise.all(buttons.map((button) => button.boundingBox()));
+        const [left, right] = controls.sort((a, b) => a!.x - b!.x);
+        expect(number.x).toBeGreaterThanOrEqual(left!.x + left!.width - 1);
+        expect(number.x + number.width).toBeLessThanOrEqual(right!.x + 1);
+        for (const control of controls) {
+          expect(control!.width).toBeGreaterThanOrEqual(44);
+          expect(control!.height).toBeGreaterThanOrEqual(44);
+          expect(control!.y).toBeGreaterThanOrEqual(bounds.y - 1);
+          expect(control!.y + control!.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
+        }
+        const caption = tile.locator('.life-caption');
+        if (await caption.isVisible()) {
+          const label = (await caption.boundingBox())!;
+          expect(label.y).toBeGreaterThanOrEqual(bounds.y - 1);
+          expect(label.y + label.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
+        }
+      }
+    }
+  }
+  await page.getByRole('button', { name: "Decrease Player 8's life", exact: true }).click();
+  await expect(page.getByTestId('life-7')).toHaveText('39');
+  await page.getByRole('button', { name: "Increase Player 1's life", exact: true }).click();
+  await expect(page.getByTestId('life-0')).toHaveText('41');
+});
+
 test('settled dice draw their recorded numbers upright and centered on the face', async ({ page }, info) => {
   await page.addInitScript(() => {
     const probe = window as unknown as Probe;

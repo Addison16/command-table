@@ -10,7 +10,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    color: #b4d6bf;
+    color: var(--gain);
     font-size: 13px;
   }
   .group-life-targets {
@@ -35,7 +35,7 @@
     cursor: pointer;
   }
   .group-life-target:has(input:checked) {
-    border-color: var(--player);
+    border-color: var(--player-ink, var(--player));
     background: color-mix(in srgb, var(--player) 8%, transparent);
   }
   .group-life-target input {
@@ -43,7 +43,7 @@
     height: 22px;
     min-height: 22px;
     flex-shrink: 0;
-    accent-color: var(--player);
+    accent-color: var(--player-ink, var(--player));
   }
   .group-life-target span,
   .group-life-preview li span {
@@ -57,9 +57,9 @@
   }
   .group-life-preview {
     padding: 16px;
-    border: 1px solid #d6b66a40;
+    border: 1px solid var(--accent-line);
     border-radius: 14px;
-    background: #d6b66a06;
+    background: var(--accent-soft);
   }
   .group-life-preview h3 {
     font-size: 15px;
@@ -84,6 +84,6 @@
     white-space: nowrap;
   }
   .group-life-caster strong {
-    color: #b4d6bf;
+    color: var(--gain);
   }
 }

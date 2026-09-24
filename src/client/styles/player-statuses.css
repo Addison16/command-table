@@ -10,7 +10,7 @@
     padding-top: 6px;
   }
   .status-chip {
-    --status-ink: #d5c49d;
+    --status-ink: var(--status-commander);
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -18,7 +18,7 @@
     padding: 3px 7px;
     border: 1px solid color-mix(in srgb, var(--status-ink) 24%, transparent);
     border-radius: 20px;
-    background: linear-gradient(155deg, #242933f5, #10151df5);
+    background: var(--status-gradient);
     box-shadow:
       inset 0 1px 0 #ffffff09,
       0 2px 5px #0002;
@@ -27,15 +27,15 @@
     line-height: 1;
   }
   .status-chip[data-status='poison'] {
-    --status-ink: #b6d2bc;
+    --status-ink: var(--status-poison);
   }
   .status-chip[data-status='tax'] {
-    --status-ink: #c2c9de;
+    --status-ink: var(--status-tax);
   }
   .status-chip.is-warning {
-    --status-ink: #ffd0a3;
-    border-color: #e6a267a0;
-    background: linear-gradient(155deg, #433025fa, #251c19fa);
+    --status-ink: var(--status-warning);
+    border-color: var(--status-warning-line);
+    background: var(--status-warning-gradient);
   }
   .status-chip > svg {
     flex-shrink: 0;
@@ -75,7 +75,7 @@
     right: 0;
     padding: 2px;
     border-radius: 3px;
-    background: #111721;
+    background: var(--delta-background);
     font-size: 10px;
   }
   .tile-content:has(.player-statuses) .life-delta:empty {

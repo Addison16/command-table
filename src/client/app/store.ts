@@ -12,6 +12,7 @@ import {
 import { ConflictError, initialProfile, Repository, type Profile } from '../storage/repository.js';
 import { acquireEditorIdentity } from '../storage/tabIdentity.js';
 import { playCue, unlockAudio } from '../components/feedback.js';
+import { cacheAppearance } from '../features/appearance.js';
 
 let tabId = newId();
 try {
@@ -90,6 +91,7 @@ export async function updateProfile(patch: Partial<Profile>) {
   useApp.setState({ profile });
   try {
     await repository.put('profile', profile);
+    if (!repository.memory) cacheAppearance(profile.theme);
   } catch {
     useApp.setState({ storageWarning: 'Preferences could not be saved. Check available browser storage.' });
   }
@@ -100,6 +102,7 @@ export async function hydrate() {
   useApp.setState({ storageWarning: repository.warning });
   try {
     const profile = await repository.profile();
+    if (!repository.memory) cacheAppearance(profile.theme);
     useApp.setState({ profile });
     const { game, readOnly } = await repository.active();
     useApp.setState({ localGame: game, game, confirmed: game, readOnly });

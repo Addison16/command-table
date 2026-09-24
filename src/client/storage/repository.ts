@@ -15,6 +15,7 @@ import { recoveryDeadline, reduceGame, type Context } from '../../shared/game.js
 const preferencesSchema = z.object({
   schemaVersion: z.literal(1),
   installationId: z.string().uuid(),
+  theme: z.enum(['system', 'light', 'dark']).default('system'),
   effects: z.enum(['full', 'reduced', 'off']),
   audio: z.boolean(),
   haptics: z.boolean(),
@@ -33,6 +34,7 @@ export type Profile = z.infer<typeof preferencesSchema>;
 export const initialProfile = (): Profile => ({
   schemaVersion: 1,
   installationId: newId(),
+  theme: 'system',
   effects: 'full',
   audio: false,
   haptics: false,

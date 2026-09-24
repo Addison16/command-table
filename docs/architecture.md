@@ -15,7 +15,9 @@ The original `mtg-util` storage keys, database filename, export-format identifie
 | Server           | `src/server/app.ts`, `service.ts`                  | HTTP/WS validation, authorization, transactional commands, retention, broadcasting      |
 | Database/config  | `src/server/database.ts`, `config.ts`              | SQLite migration and pragmas, explicit origin/security configuration                    |
 
-There are no accounts, analytics, hardware fingerprints, cloud services, card lookups, or external runtime asset requests. Names and commander labels are rendered as text. All players, commanders, matches, members, and operations have independent stable IDs.
+Core game tracking needs no accounts, analytics, hardware fingerprints or external cloud services. Optional card search, artwork, readable card details and rulings use Scryfall through constrained server endpoints and bounded caches; unavailable card data does not block counters. Names and commander labels are rendered as text. All players, commanders, matches, members, and operations have independent stable IDs.
+
+Appearance is a browser-local preference (`system`, `light` or `dark`), defaulting to `system` for older profiles. Semantic CSS variables theme the interface while preserving player colors, card artwork and dice materials. IndexedDB remains authoritative; a validated localStorage mirror lets the external `appearance.js` bootstrap apply the selected theme before hydration. The mounted appearance hook follows device changes and page restoration. These display changes do not create game commands or alter other participants' displays.
 
 ## Game model
 
@@ -74,7 +76,7 @@ The server sends compact current room snapshots, including bounded history. It u
 
 ## Database and retention
 
-SQLite uses WAL, foreign keys, FULL synchronization, a five-second busy timeout, and transactional schema migrations. Tables hold sessions, rooms, members, operation receipts, bounded events, and up to ten final match snapshots. The first migration creates schema version 1; version 2 adds nullable `members.seat_profile` without changing existing games or memberships. A newer database is rejected safely by an older server, so rolling back to the previous release requires the matching version-1 backup.
+SQLite uses WAL, foreign keys, FULL synchronization, a five-second busy timeout, and transactional schema migrations. Tables hold sessions, rooms, members, operation receipts, bounded events, and up to ten final match snapshots. The first migration creates schema version 1; version 2 adds nullable `members.seat_profile` without changing existing games or memberships. A newer database is rejected safely by a server that only supports an older schema, so rollback across the schema-2 introduction requires a compatible version-1 backup. v0.3.0 adds no SQLite migration.
 
 Rooms expire 30 days after their last committed gameplay/administrative activity by default. Sessions have a configurable rolling 90-day lifetime. A minute cleanup interval removes expired records and notifies affected sockets; presence and heartbeats do not extend room retention. A lost host credential has no invitation-code recovery mechanism.
 

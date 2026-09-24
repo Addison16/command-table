@@ -13,8 +13,8 @@
     width: 100%;
     min-height: 64px;
     padding: 12px;
-    border-color: #d6b66a55;
-    background: #202a3a;
+    border-color: var(--accent-line);
+    background: var(--surface-raised);
     text-align: left;
   }
   .commander-read-button > svg {
@@ -38,9 +38,9 @@
   .commander-reading {
     margin-top: 12px;
     padding: 12px;
-    border: 1px solid #d6b66a30;
+    border: 1px solid var(--accent-line);
     border-radius: 12px;
-    background: #0b111b;
+    background: var(--surface-inset);
   }
   .commander-full-card {
     display: block;
@@ -93,7 +93,7 @@
     overflow-wrap: anywhere;
   }
   .commander-face-options [aria-pressed='true'] {
-    background: #d6b66a14;
+    background: var(--accent-wash);
     border-color: var(--gold);
   }
   .commander-read-error p {
@@ -102,7 +102,7 @@
   }
   .commander-rulings {
     margin-top: 18px;
-    border-top: 1px solid #d6b66a30;
+    border-top: 1px solid var(--accent-line);
     padding-top: 12px;
     overflow-wrap: anywhere;
   }
@@ -112,8 +112,8 @@
     gap: 12px;
     min-height: 48px;
     text-align: left;
-    background: #202a3a;
-    border-color: #d6b66a55;
+    background: var(--surface-raised);
+    border-color: var(--accent-line);
   }
   .commander-rulings-toggle[aria-expanded='true'] {
     border-color: var(--gold);
@@ -134,7 +134,7 @@
     padding: 0;
   }
   .commander-rulings-list li + li {
-    border-top: 1px solid #ffffff14;
+    border-top: 1px solid var(--line);
     padding-top: 14px;
   }
   .commander-ruling-source {

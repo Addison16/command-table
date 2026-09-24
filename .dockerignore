@@ -18,3 +18,9 @@ test-results
 playwright-report
 coverage
 docs/screenshots
+
+# Keep the private build playbook out of images and build contexts.
+PRIVATE_BUILD_PLAYBOOK.md
+
+# Unrelated local audio workspace; not application assets.
+src/Music

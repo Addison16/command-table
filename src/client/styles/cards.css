@@ -13,9 +13,9 @@
     max-height: 230px;
     overflow-y: auto;
     overscroll-behavior: contain;
-    border: 1px solid #d6b66a45;
+    border: 1px solid var(--accent-line);
     border-radius: 10px;
-    background: #090f19;
+    background: var(--input-background);
   }
   .commander-suggestions button {
     justify-content: flex-start;
@@ -30,7 +30,7 @@
     background: transparent;
   }
   .commander-suggestions button:hover {
-    background: #d6b66a12;
+    background: var(--accent-wash);
   }
   .commander-art-actions {
     display: flex;
@@ -49,7 +49,7 @@
   }
   .commander-art-error {
     margin-top: 8px;
-    color: #efd1ad;
+    color: var(--warning-text);
     font-size: 12px;
   }
   .commander-art-preview {
@@ -59,9 +59,9 @@
     align-items: start;
     margin-top: 12px;
     padding: 12px;
-    border: 1px solid #d6b66a30;
+    border: 1px solid var(--accent-line);
     border-radius: 12px;
-    background: #080e1770;
+    background: var(--surface-inset);
   }
   .commander-art-preview > img {
     display: block;
@@ -93,7 +93,7 @@
   }
   .commander-art-credit strong {
     font-size: 12px;
-    color: #f3f0e8;
+    color: var(--text);
   }
   .commander-art-credit > a {
     display: inline-flex;

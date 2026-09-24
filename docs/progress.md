@@ -2,6 +2,14 @@
 
 The original specification is preserved in `BUILD_PLAN.md`.
 
+**v0.3.0 is being prepared for publication at the user's request.** It includes light/dark/device appearance, improved dense mobile layouts, and the shallower phone background glow. Current release verification and publication results will be recorded in [testing evidence](testing.md). The dated local-preview entries below preserve the history of these changes; they are not separate pending features.
+
+The local phone background fade now ends 25% higher in portrait and landscape. The Docker copy is updated; this adjustment has not been published. See the [verification record](testing.md#september-19-local-phone-background-fade).
+
+**Light, dark and device-based appearance are deployed locally and have not been published.** **Settings → Appearance** follows the phone by default or remembers a fixed **Light** or **Dark** choice for this browser. The complete interface follows the selected theme while player colors, dice and commander artwork retain their identity. Narrow dense tables also keep life numbers, tap controls and footers clear.
+
+The local preview passes lint/types/build, 172 unit/integration checks, 56 targeted browser checks, production PWA checks in both engines, and the final x64 container smoke test. The existing Docker service was updated with a verified backup and exact server-record preservation. A live prompted update preserved the saved game, appearance persisted across reload/offline use, system changes worked offline, and Undo retained unrelated values. See the [verification record](testing.md#september-18-local-light-and-dark-appearance). Nothing was pushed to GitHub or a registry.
+
 **The primary Docker address is now `ghcr.io/addison16/commandtable:latest`.** Both supported architectures were copied without changing their digests, and anonymous pulls passed. Current install instructions and release downloads use the new name; future releases also retain the old `commanders-table` compatibility image. The local Docker deployment uses the new address with the same app, volume and saved records. The GitHub source repository and v0.2.0 source tag are unchanged. See the [image-address verification record](testing.md#september-18-docker-image-address-update).
 
 **[Command Table v0.2.0 is published and deployed](https://github.com/Addison16/commanders-table/releases/tag/v0.2.0)** following the user's explicit authorization. The release includes the rebrand, fresh games and rematch options, automatic mobile layouts, group life effects, commander rulings, recap PNGs, player-status badges and Docker-first hosting instructions. Earlier local-only entries below record the state when each preview was checked; these improvements are now public.

@@ -17,3 +17,9 @@ playwright-report/
 coverage/
 backups/
 exports/
+
+# Private instructions: never commit or publish this playbook.
+/PRIVATE_BUILD_PLAYBOOK.md
+
+# Unrelated local audio workspace; not application assets.
+/src/Music/
