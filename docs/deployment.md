@@ -144,7 +144,7 @@ The original image-address migration preserved the v0.2.0 runtime. Both names no
 
 Pulling `latest` downloads an image; it does not replace a running container. `up -d` applies the downloaded image while keeping the named volume. Docker managers can detect a changed tag, but unattended updates require an updater you configure. Do not replace your configured `.env` with the release example during updates.
 
-For a pinned installation, set `MTG_IMAGE` to a version such as `ghcr.io/addison16/commandtable:0.3.0` or an image digest, then use the same `pull` and `up -d` commands. Changing a version pin is intentional; `latest` remains the standard install/update path.
+For a pinned installation, set `MTG_IMAGE` to a version such as `ghcr.io/addison16/commandtable:0.3.1` or an image digest, then use the same `pull` and `up -d` commands. Changing a version pin is intentional; `latest` remains the standard install/update path.
 
 Migrations execute in transactions. An older app refuses a newer database schema, so rollback can require the matching pre-update backup. Retain the previous image or version/digest and its configuration until the update is verified.
 

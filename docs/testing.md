@@ -2,7 +2,7 @@
 
 Entries record results and deployment state at the time of each check; historical `latest` digests and local-only status are not statements about the current release.
 
-## September 23 v0.3.0 release verification
+## September 23 v0.3.0 candidate and v0.3.1 release verification
 
 The user requested publication of the current application improvements. The candidate combines the previously verified light/dark/device appearance, dense mobile layout refinements and phone background fade as **v0.3.0**. The source and lockfile agree on the version; the release metadata check passes. Application rules, server permissions, storage identifiers and SQLite schema remain unchanged.
 
@@ -12,7 +12,11 @@ The Node 24 release image `mtg-util:release-0.3.0` (`98064de17382`) builds and p
 
 The production-browser sweep passed 147 cases with two expected skips; the remaining WebKit audio case initially failed because the command omitted this Arch host's required GStreamer plugin path. With `GST_PLUGIN_PATH_1_0="$PWD/.browser-cache/gst-good"` restored, all three WebKit recovery/sound cases passed in each of three repetitions (nine passes), including real audio samples, suspension recovery and mute. Thus all 148 applicable browser cases have passed across the sweep and focused rerun, with no application or assertion changes. Formatting checks also pass. The two skips are WebKit's Chromium-only multitouch instrumentation and the production-offline journey independently covered by the WebKit PWA check.
 
-Hosted release gates are being checked separately. Physical phones, native installation/share sheets and prolonged battery behavior are not claimed by automated testing. The existing local Docker service and its data have not been replaced during release preparation.
+The initial [v0.3.0 hosted gate](https://github.com/Addison16/commanders-table/actions/runs/35942934968) passed native amd64/arm64 container checks and 145 browser cases with three expected skips, but stopped on the first-paint test in both engines. Unlike production, Vite's development page includes two module scripts; the test's broad locator was ambiguous. No v0.3.0 release or images were published. The immutable tag remains as evidence. v0.3.1 excludes Vite's client module and requires exactly one application entry, retaining all pre-hydration assertions with no application behavior changes.
+
+For v0.3.1, lint, formatting, types, all 172 unit/integration tests and the production build pass again. All 16 appearance cases pass against Vite development, and all 16 pass against the production server, covering both browser engines in both modes. The built frontend hashes are unchanged from the v0.3.0 candidate: this correction changes tests, release metadata and documentation only.
+
+Hosted v0.3.1 release gates are being checked separately. Physical phones, native installation/share sheets and prolonged battery behavior are not claimed by automated testing. The existing local Docker service and its data have not been replaced during release preparation.
 
 ## September 19 local phone background fade
 

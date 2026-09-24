@@ -2,7 +2,7 @@
 
 A mobile-first companion for a physical Magic table. Track one to eight players on **One device**, or create a **Shared room** and invite friends by code, link, or QR. Players join in a browser with no accounts or client installation. Hosts run the app with Docker.
 
-Start with the [Docker installation](#docker) below to host on your own computer or server and receive app updates. See the [v0.3.0 release notes](docs/releases/v0.3.0.md) for the latest changes.
+Start with the [Docker installation](#docker) below to host on your own computer or server and receive app updates. See the [v0.3.1 release notes](docs/releases/v0.3.1.md) for the latest changes.
 
 **Source-available for noncommercial use:** free to use, modify, and share under the [PolyForm Noncommercial License 1.0.0](LICENSE). Commercial use is not licensed. See [licensing](#publication-and-project-scope) for the scope and earlier releases.
 

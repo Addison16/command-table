@@ -2,7 +2,7 @@
 
 The original specification is preserved in `BUILD_PLAN.md`.
 
-**v0.3.0 is being prepared for publication at the user's request.** It includes light/dark/device appearance, improved dense mobile layouts, and the shallower phone background glow. Current release verification and publication results will be recorded in [testing evidence](testing.md). The dated local-preview entries below preserve the history of these changes; they are not separate pending features.
+**v0.3.1 is being prepared for publication at the user's request.** It includes light/dark/device appearance, improved dense mobile layouts, and the shallower phone background glow. The v0.3.0 gate stopped publication because the first-paint test matched Vite's development module as well as the application entry; v0.3.1 corrects that test without changing application behavior. The failed tag is preserved, not rewritten. Current verification and publication results are recorded in [testing evidence](testing.md). The local-preview entries below preserve the history of these changes; they are not separate pending features.
 
 The local phone background fade now ends 25% higher in portrait and landscape. The Docker copy is updated; this adjustment has not been published. See the [verification record](testing.md#september-19-local-phone-background-fade).
 

@@ -76,7 +76,7 @@ The server sends compact current room snapshots, including bounded history. It u
 
 ## Database and retention
 
-SQLite uses WAL, foreign keys, FULL synchronization, a five-second busy timeout, and transactional schema migrations. Tables hold sessions, rooms, members, operation receipts, bounded events, and up to ten final match snapshots. The first migration creates schema version 1; version 2 adds nullable `members.seat_profile` without changing existing games or memberships. A newer database is rejected safely by a server that only supports an older schema, so rollback across the schema-2 introduction requires a compatible version-1 backup. v0.3.0 adds no SQLite migration.
+SQLite uses WAL, foreign keys, FULL synchronization, a five-second busy timeout, and transactional schema migrations. Tables hold sessions, rooms, members, operation receipts, bounded events, and up to ten final match snapshots. The first migration creates schema version 1; version 2 adds nullable `members.seat_profile` without changing existing games or memberships. A newer database is rejected safely by a server that only supports an older schema, so rollback across the schema-2 introduction requires a compatible version-1 backup. v0.3.1 adds no SQLite migration.
 
 Rooms expire 30 days after their last committed gameplay/administrative activity by default. Sessions have a configurable rolling 90-day lifetime. A minute cleanup interval removes expired records and notifies affected sockets; presence and heartbeats do not extend room retention. A lost host credential has no invitation-code recovery mechanism.
 

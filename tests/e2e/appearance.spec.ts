@@ -272,7 +272,11 @@ test.describe('appearance before the app loads', () => {
     await openSettings(page);
     await chooseTheme(page, 'dark');
     await closeSettings(page);
-    const entry = await page.locator('script[type="module"][src]').getAttribute('src');
+    // Vite adds its own module in development; hold only the app entry so the
+    // same pre-hydration assertion also works against the production bundle.
+    const appEntry = page.locator('script[type="module"][src]:not([src$="/@vite/client"])');
+    await expect(appEntry).toHaveCount(1);
+    const entry = await appEntry.getAttribute('src');
     expect(entry).toBeTruthy();
     const entryUrl = new URL(entry!, page.url()).href;
     const errors: string[] = [];
