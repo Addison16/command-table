@@ -2,7 +2,13 @@
 
 The original specification is preserved in `BUILD_PLAN.md`.
 
-**v0.3.1 is being prepared for publication at the user's request.** It includes light/dark/device appearance, improved dense mobile layouts, and the shallower phone background glow. The v0.3.0 gate stopped publication because the first-paint test matched Vite's development module as well as the application entry; v0.3.1 corrects that test without changing application behavior. The failed tag is preserved, not rewritten. Current verification and publication results are recorded in [testing evidence](testing.md). The local-preview entries below preserve the history of these changes; they are not separate pending features.
+**[Command Table v0.3.1 is published](https://github.com/Addison16/commanders-table/releases/tag/v0.3.1)** at the user's request. It includes light/dark/device appearance, improved dense mobile layouts, and the shallower phone background glow. [Main verification](https://github.com/Addison16/commanders-table/actions/runs/35945461845) and the [release workflow](https://github.com/Addison16/commanders-table/actions/runs/35945462213) passed: 172 unit/integration checks, 147 hosted browser cases with three expected skips, production PWA/HTTPS checks and native amd64/arm64 container verification. Anonymous downloads and pulls pass; both Docker image names provide matching `0.3.1`, `stable` and `latest` platform images. The downloaded public image passed a separate x64 persistence and backup/restore test. Private local documents and unrelated media remain excluded. The existing local Docker service, configuration and data were not replaced during publication.
+
+The v0.3.0 gate stopped publication because the first-paint test matched Vite's development module as well as the application entry. v0.3.1 corrects that test without changing application behavior; all appearance tests pass in both development and production. The failed tag is preserved, not rewritten. See [testing evidence](testing.md) for completed checks and limitations.
+
+## Historical local previews and releases
+
+The entries below preserve the state at each earlier milestone; local-only and previous-version statements are historical, not separate pending features or the current publication state.
 
 The local phone background fade now ends 25% higher in portrait and landscape. The Docker copy is updated; this adjustment has not been published. See the [verification record](testing.md#september-19-local-phone-background-fade).
 
