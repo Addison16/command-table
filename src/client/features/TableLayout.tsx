@@ -22,8 +22,8 @@ export function TableLayoutOptions() {
         Follow device rotation
       </Toggle>
       <p className="hint">
-        On phones and tablets, landscape uses Shared table and portrait uses All facing me. Choose a layout
-        below to keep it fixed.
+        On by default. On phones and tablets, landscape uses Shared table and portrait uses All facing me.
+        Choose a layout below to keep it fixed.
       </p>
       <div className="layout-options" role="group" aria-label="Counter layout">
         {(['upright', 'shared'] as const).map((option) => (

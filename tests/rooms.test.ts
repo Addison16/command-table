@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createGame, defaultSetup } from '../src/shared/game.js';
-import { type Command, type AdminCommand, type Envelope } from '../src/shared/schema.js';
+import { createGame, defaultSetup, reduceGame } from '../src/shared/game.js';
+import { type Command, type AdminCommand, type Envelope, type Game } from '../src/shared/schema.js';
 import { openDatabase } from '../src/server/database.js';
 import { hash, RoomService } from '../src/server/service.js';
 import { readConfig } from '../src/server/config.js';
@@ -20,7 +20,7 @@ const close: (() => void | Promise<unknown>)[] = [];
 afterEach(async () => {
   while (close.length) await close.pop()!();
 });
-function fixture(filename = ':memory:', count = 4) {
+function fixture(filename = ':memory:', count = 4, prepare?: (game: Game) => void) {
   let now = 1_800_000_000_000;
   const db = openDatabase(filename),
     svc = new RoomService(db, config, () => now);
@@ -34,7 +34,9 @@ function fixture(filename = ':memory:', count = 4) {
   const host = session(),
     guest = session(),
     other = session();
-  const room = svc.create(host.hash, createGame(defaultSetup(count), randomUUID, now), 'Host');
+  const initial = createGame(defaultSetup(count), randomUUID, now);
+  prepare?.(initial);
+  const room = svc.create(host.hash, initial, 'Host', initial.order.at(-1));
   const g = svc.join(guest.hash, room.code!, 'Alex'),
     o = svc.join(other.hash, room.code!, 'Sam');
   const envelope = (actor: string, command: Command | AdminCommand, baseRevision?: number): Envelope => {
@@ -73,8 +75,35 @@ function fixture(filename = ':memory:', count = 4) {
   };
 }
 describe('authoritative room transactions', () => {
-  it('keeps opponents-only life changes host-only, including rooms where everyone can edit totals', () => {
+  it('rejects self-damage and corrections for guests and hosts without changing the room', () => {
+    const f = fixture(':memory:', 4, (game) => {
+      const id = randomUUID();
+      game.commanders[id] = { id, ownerId: game.order[0], label: 'Partner', casts: 0 };
+    });
+    f.approve();
+    const before = f.svc.view(f.room.id, f.host.hash);
+    for (const actor of [f.host, f.guest]) {
+      const playerId = f.svc.view(f.room.id, actor.hash).me.seatId!;
+      const owned = Object.values(before.game!.commanders).filter((entry) => entry.ownerId === playerId);
+      for (const commander of owned) {
+        const commands: Command[] = [
+          { type: 'damage', playerId, commanderId: commander.id, amount: 5, subtractLife: true },
+          { type: 'damage', playerId, commanderId: commander.id, amount: 5, subtractLife: false },
+          { type: 'damageSet', playerId, commanderId: commander.id, value: 5 },
+        ];
+        for (const command of commands) {
+          expect(f.run(actor.hash, command).receipt).toMatchObject({
+            ok: false,
+            error: expect.stringContaining('Choose another player’s commander'),
+          });
+          expect(f.svc.view(f.room.id, f.host.hash)).toEqual(before);
+        }
+      }
+    }
+  });
+  it('rejects group life changes for every room participant without changing the table', () => {
     const f = fixture();
+    f.approve();
     const command: Extract<Command, { type: 'groupLife' }> = {
       type: 'groupLife',
       casterId: f.room.seats[0].id,
@@ -82,69 +111,165 @@ describe('authoritative room transactions', () => {
       loss: 4,
       gain: 6,
     };
-    expect(f.run(f.guest.hash, command).receipt.ok).toBe(false);
+    const before = f.svc.view(f.room.id, f.host.hash);
+    for (const actor of [f.host, f.guest, f.other]) {
+      expect(f.run(actor.hash, command).receipt).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/one device/i),
+      });
+      expect(f.svc.view(f.room.id, f.host.hash)).toEqual(before);
+    }
+  });
+  const playerCommands: ((game: Game, playerId: string) => Command)[] = [
+    (_, playerId) => ({ type: 'adjust', playerId, field: 'life', delta: -1 }),
+    (_, playerId) => ({ type: 'set', playerId, field: 'poison', value: 2 }),
+    (_, playerId) => ({ type: 'adjust', playerId, field: 'energy', delta: 1 }),
+    (game, playerId) => ({
+      type: 'damage',
+      playerId,
+      commanderId: Object.values(game.commanders).find((entry) => entry.ownerId !== playerId)!.id,
+      amount: 2,
+      subtractLife: true,
+    }),
+    (game, playerId) => ({
+      type: 'damageSet',
+      playerId,
+      commanderId: Object.values(game.commanders).find((entry) => entry.ownerId !== playerId)!.id,
+      value: 2,
+    }),
+    (game, playerId) => ({
+      type: 'cast',
+      commanderId: Object.values(game.commanders).find((c) => c.ownerId === playerId)!.id,
+    }),
+    (game, playerId) => ({
+      type: 'castSet',
+      commanderId: Object.values(game.commanders).find((c) => c.ownerId === playerId)!.id,
+      value: 2,
+    }),
+    (_, playerId) => ({ type: 'customize', playerId, name: 'Own name', color: 'teal' }),
+    (game, playerId) => ({
+      type: 'editPlayer',
+      playerId,
+      name: 'Own profile',
+      color: 'teal',
+      commanders: Object.values(game.commanders)
+        .filter((c) => c.ownerId === playerId)
+        .map(({ id }) => ({ id, label: 'Own commander' })),
+    }),
+    (game, playerId) => ({
+      type: 'commanderName',
+      commanderId: Object.values(game.commanders).find((c) => c.ownerId === playerId)!.id,
+      label: 'Own commander',
+    }),
+    (_, playerId) => ({ type: 'eliminate', playerId, eliminated: true }),
+  ];
+  it.each(playerCommands.map((build, index) => ({ build, index })))(
+    'restricts player command $index to its owner, including the host',
+    ({ build }) => {
+      const f = fixture(':memory:', 4, (game) => {
+        game.settings.counters = ['energy'];
+      });
+      f.approve();
+      for (const actor of [f.host, f.guest, f.other]) {
+        const view = f.svc.view(f.room.id, actor.hash);
+        for (const otherSeat of view.seats.filter((seat) => seat.id !== view.me.seatId)) {
+          const before = f.svc.view(f.room.id, actor.hash);
+          expect(f.run(actor.hash, build(before.game!, otherSeat.id)).receipt.ok).toBe(false);
+          expect(f.svc.view(f.room.id, actor.hash)).toEqual(before);
+        }
+        expect(f.run(actor.hash, build(view.game!, view.me.seatId!)).receipt.ok).toBe(true);
+        expect(f.run(actor.hash, { type: 'undo' }).receipt.ok).toBe(true);
+      }
+    },
+  );
+  it('disables old shared-edit policy values and cannot enable them again', () => {
+    const f = fixture();
     f.approve();
+    f.db.prepare('UPDATE rooms SET everyone_edits=1 WHERE id=?').run(f.room.id);
+    expect(f.svc.view(f.room.id, f.host.hash).everyoneEdits).toBe(false);
     const before = f.svc.view(f.room.id, f.host.hash).game;
-    expect(f.run(f.guest.hash, command).receipt.ok).toBe(false);
+    expect(f.run(f.host.hash, { type: 'policy', everyoneEdits: true }).receipt.ok).toBe(false);
+    expect(
+      f.run(f.guest.hash, { type: 'adjust', playerId: f.room.seats[1].id, field: 'life', delta: -1 }).receipt
+        .ok,
+    ).toBe(false);
+    expect(
+      f.run(f.host.hash, { type: 'adjust', playerId: f.room.seats[0].id, field: 'life', delta: -1 }).receipt
+        .ok,
+    ).toBe(false);
     expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(before);
-    f.run(f.host.hash, { type: 'policy', everyoneEdits: true });
-    const sharedEditing = f.svc.view(f.room.id, f.host.hash).game;
-    expect(f.run(f.guest.hash, command).receipt.ok).toBe(false);
-    expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(sharedEditing);
-    expect(f.run(f.host.hash, command).receipt.ok).toBe(true);
+    expect(f.run(f.host.hash, { type: 'policy', everyoneEdits: false }).receipt.ok).toBe(true);
   });
-  it('commits a life batch once with a single host undo and unchanged non-life stats', () => {
+  it('does not let the host undo another player’s action', () => {
     const f = fixture();
     f.approve();
-    const before = f.svc.view(f.room.id, f.host.hash).game!;
-    const [casterId, first, second, untouched] = before.order;
-    const envelope = f.envelope(f.host.hash, {
-      type: 'groupLife',
-      casterId,
-      targetIds: [first, second],
-      loss: 5,
-      gain: 7,
-    });
-    const response = f.svc.execute(f.host.hash, envelope);
-    expect(response.receipt.ok).toBe(true);
-    const changed = response.view!.game!;
-    expect(changed.players[casterId].life).toBe(47);
-    expect(changed.players[first].life).toBe(35);
-    expect(changed.players[second].life).toBe(35);
-    expect(changed.players[untouched]).toEqual(before.players[untouched]);
-    expect(changed.commanders).toEqual(before.commanders);
-    expect(changed.damageReceived).toEqual(before.damageReceived);
-    expect(changed.history).toHaveLength(before.history.length + 1);
-    expect(changed.undo).toHaveLength(before.undo.length + 1);
-    expect(f.svc.execute(f.host.hash, envelope).receipt).toEqual(response.receipt);
-    expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(changed);
-    expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(false);
-    const undone = f.run(f.host.hash, { type: 'undo' });
-    expect(undone.receipt.ok).toBe(true);
-    expect(undone.view!.game!.players).toEqual(before.players);
+    f.run(f.guest.hash, { type: 'adjust', playerId: f.room.seats[0].id, field: 'life', delta: -1 });
+    const before = f.svc.view(f.room.id, f.host.hash);
+    expect(f.run(f.host.hash, { type: 'undo' }).receipt.ok).toBe(false);
+    expect(f.svc.view(f.room.id, f.host.hash)).toEqual(before);
+    expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(true);
   });
-  it('rejects stale, forged and out-of-bounds life batches without partial room changes', () => {
+  it('keeps an unseated host’s player access read-only while preserving table controls and their undo', () => {
     const f = fixture();
-    const [casterId, first, second] = f.room.seats.map((seat) => seat.id);
-    const command: Extract<Command, { type: 'groupLife' }> = {
-      type: 'groupLife',
-      casterId,
-      targetIds: [first, second],
-      loss: 5,
-    };
-    const stale = f.envelope(f.host.hash, command);
-    f.run(f.host.hash, { type: 'adjust', playerId: casterId, field: 'life', delta: 1 });
-    const afterTap = f.svc.view(f.room.id, f.host.hash).game;
-    expect(f.svc.execute(f.host.hash, stale).receipt.ok).toBe(false);
-    expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(afterTap);
-    expect(() => f.run(f.host.hash, { ...command, targetIds: [first, casterId] })).toThrow();
-    expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(afterTap);
-    f.run(f.host.hash, { type: 'set', playerId: second, field: 'life', value: -999_998 });
-    const beforeBoundary = f.svc.view(f.room.id, f.host.hash).game;
-    expect(f.run(f.host.hash, command).receipt.ok).toBe(false);
-    expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(beforeBoundary);
+    f.approve();
+    f.run(f.host.hash, { type: 'release', memberId: f.room.me.id });
+    const before = f.svc.view(f.room.id, f.host.hash);
+    expect(before.me.seatId).toBeNull();
+    expect(before.game!.order).toHaveLength(4);
+    for (const build of playerCommands)
+      expect(f.run(f.host.hash, build(before.game!, before.game!.order[0])).receipt.ok).toBe(false);
+    expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(before.game);
+    const controls: Command[] = [
+      { type: 'marker', marker: 'monarch', playerId: before.game!.order[0] },
+      { type: 'turn', playerId: before.game!.order[0], advance: true },
+      { type: 'turnTracking', enabled: true },
+      { type: 'timer', action: 'pause' },
+      { type: 'trackers', counters: ['energy'], markerTrackers: ['monarch'] },
+      { type: 'end' },
+    ];
+    for (const command of controls) {
+      expect(f.run(f.guest.hash, command).receipt.ok).toBe(false);
+      expect(f.run(f.host.hash, command).receipt.ok).toBe(true);
+      expect(f.run(f.host.hash, { type: 'undo' }).receipt.ok).toBe(true);
+    }
+    const after = f.svc.view(f.room.id, f.host.hash).game!;
+    expect(after.players).toEqual(before.game!.players);
+    expect(after.commanders).toEqual(before.game!.commanders);
   });
-  it('commits a player profile once, lets its owner undo it, and limits edits to the assigned seat or host', () => {
+  it.each(['life', 'damage', 'commander', 'group'])(
+    'rejects a legacy %s undo frame that changes another seat, even for its actor',
+    (kind) => {
+      const f = fixture();
+      f.approve();
+      const game = f.svc.view(f.room.id, f.host.hash).game!;
+      const playerId = game.order[0];
+      const commanderId = Object.values(game.commanders).find((c) =>
+        kind === 'damage' ? c.ownerId !== playerId : c.ownerId === playerId,
+      )!.id;
+      const command: Command =
+        kind === 'life'
+          ? { type: 'adjust', playerId, field: 'life', delta: -1 }
+          : kind === 'damage'
+            ? { type: 'damage', playerId, commanderId, amount: 2, subtractLife: false }
+            : kind === 'commander'
+              ? { type: 'cast', commanderId }
+              : { type: 'groupLife', casterId: f.room.me.seatId!, targetIds: [playerId], loss: 2, gain: 2 };
+      const legacy = reduceGame(game, command, {
+        id: randomUUID(),
+        operationId: randomUUID(),
+        now: f.svc.now(),
+        actorId: f.room.me.id,
+        actor: 'Host',
+      });
+      f.db
+        .prepare('UPDATE rooms SET game=?,undo_room_revision=revision WHERE id=?')
+        .run(JSON.stringify(legacy), f.room.id);
+      const before = f.svc.view(f.room.id, f.host.hash);
+      expect(f.run(f.host.hash, { type: 'undo' }).receipt.ok).toBe(false);
+      expect(f.svc.view(f.room.id, f.host.hash)).toEqual(before);
+    },
+  );
+  it('commits a player profile once, lets its owner undo it, and limits edits to the assigned seat', () => {
     const f = fixture();
     const playerId = f.room.seats[0].id;
     const commander = Object.values(f.room.game!.commanders).find((entry) => entry.ownerId === playerId)!;
@@ -168,7 +293,7 @@ describe('authoritative room transactions', () => {
     f.run(f.guest.hash, {
       type: 'damage',
       playerId,
-      commanderId: commander.id,
+      commanderId: Object.values(f.room.game!.commanders).find((entry) => entry.ownerId !== playerId)!.id,
       amount: 5,
       subtractLife: true,
     });
@@ -209,7 +334,8 @@ describe('authoritative room transactions', () => {
     const beforeDenied = f.svc.view(f.room.id, f.host.hash).game!;
     expect(f.run(f.guest.hash, otherCommand).receipt.ok).toBe(false);
     expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(beforeDenied);
-    expect(f.run(f.host.hash, otherCommand).receipt.ok).toBe(true);
+    expect(f.run(f.host.hash, otherCommand).receipt.ok).toBe(false);
+    expect(f.run(f.other.hash, otherCommand).receipt.ok).toBe(true);
     expect(f.svc.view(f.room.id, f.other.hash).game!.commanders[otherCommander.id].card).toEqual(card);
   });
   it('rejects incomplete, duplicate and foreign commander IDs without partially saving a shared profile', () => {
@@ -246,7 +372,13 @@ describe('authoritative room transactions', () => {
     }
   });
   it('applies approved commander artwork to existing identities and protects each player’s artwork', () => {
-    const f = fixture();
+    const f = fixture(':memory:', 4, (game) => {
+      const seat = game.order[0];
+      const commander = Object.values(game.commanders).find((c) => c.ownerId === seat)!;
+      commander.casts = 1;
+      game.players[seat].life = 35;
+      game.damageReceived[seat] = { [commander.id]: 5 };
+    });
     const seat = f.room.seats[0].id;
     const original = Object.values(f.room.game!.commanders).find((commander) => commander.ownerId === seat)!;
     const card: CommanderCard = {
@@ -256,14 +388,6 @@ describe('authoritative room transactions', () => {
       scryfallUrl: 'https://scryfall.com/card/test/1/example-commander',
       artist: 'Example Artist',
     };
-    f.run(f.host.hash, { type: 'cast', commanderId: original.id });
-    f.run(f.host.hash, {
-      type: 'damage',
-      playerId: seat,
-      commanderId: original.id,
-      amount: 5,
-      subtractLife: true,
-    });
     const before = f.svc.view(f.room.id, f.host.hash).game!;
     const profile = { name: 'Alex', commanders: [card.name, 'Custom partner'], commanderCards: [card, null] };
     expect(f.run(f.guest.hash, { type: 'requestSeat', playerId: seat, profile }).receipt.ok).toBe(true);
@@ -312,21 +436,20 @@ describe('authoritative room transactions', () => {
     expect(f.svc.view(f.room.id, f.other.hash).game!.commanders[original.id]).toEqual({
       ...original,
       label: 'Different commander',
+      casts: 0,
     });
   });
   it('keeps player choices pending until approval, then applies them once without resetting play', () => {
-    const f = fixture(),
+    const f = fixture(':memory:', 4, (game) => {
+        const seat = game.order[0];
+        const commander = Object.values(game.commanders).find((c) => c.ownerId === seat)!;
+        commander.casts = 1;
+        game.players[seat].life = 33;
+        game.damageReceived[seat] = { [commander.id]: 7 };
+      }),
       seat = f.room.seats[0].id;
     const initial = f.svc.view(f.room.id, f.host.hash).game!;
     const commander = Object.values(initial.commanders).find((c) => c.ownerId === seat)!;
-    f.run(f.host.hash, {
-      type: 'damage',
-      playerId: seat,
-      commanderId: commander.id,
-      amount: 7,
-      subtractLife: true,
-    });
-    f.run(f.host.hash, { type: 'cast', commanderId: commander.id });
     const before = f.svc.view(f.room.id, f.host.hash).game!;
     const profile = { name: 'Rowan', commanders: ['Tymna the Weaver', 'Kraum, Ludevic’s Opus'] };
     const request = f.run(f.guest.hash, { type: 'requestSeat', playerId: seat, profile });
@@ -441,24 +564,23 @@ describe('authoritative room transactions', () => {
     const commanders = Object.values(f.svc.view(f.room.id, f.host.hash).game!.commanders).filter(
       (c) => c.ownerId === seat,
     );
-    f.run(f.host.hash, { type: 'release', memberId: f.g.me.id });
     f.run(f.guest.hash, {
       type: 'requestSeat',
-      playerId: seat,
+      playerId: f.room.seats[2].id,
       profile: { name: 'Solo', commanders: ['One renamed'] },
     });
-    f.run(f.host.hash, { type: 'cast', commanderId: commanders[1].id });
+    f.run(f.guest.hash, { type: 'cast', commanderId: commanders[1].id });
     const before = f.svc.view(f.room.id, f.host.hash).game!;
     expect(
       f.run(f.host.hash, { type: 'approve', memberId: f.g.me.id, playerId: seat, replace: false }).receipt
         .error,
     ).toMatch(/Keep both commanders/);
     expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(before);
-    expect(f.svc.view(f.room.id, f.guest.hash).me.status).toBe('pending');
-    f.run(f.host.hash, { type: 'castSet', commanderId: commanders[1].id, value: 0 });
+    expect(f.svc.view(f.room.id, f.guest.hash).me.status).toBe('approved');
+    f.run(f.guest.hash, { type: 'castSet', commanderId: commanders[1].id, value: 0 });
     f.run(f.host.hash, {
       type: 'damage',
-      playerId: seat,
+      playerId: f.room.me.seatId!,
       commanderId: commanders[1].id,
       amount: 3,
       subtractLife: false,
@@ -466,7 +588,12 @@ describe('authoritative room transactions', () => {
     expect(
       f.run(f.host.hash, { type: 'approve', memberId: f.g.me.id, playerId: seat, replace: false }).receipt.ok,
     ).toBe(false);
-    f.run(f.host.hash, { type: 'damageSet', playerId: seat, commanderId: commanders[1].id, value: 0 });
+    f.run(f.host.hash, {
+      type: 'damageSet',
+      playerId: f.room.me.seatId!,
+      commanderId: commanders[1].id,
+      value: 0,
+    });
     expect(
       f.run(f.host.hash, { type: 'approve', memberId: f.g.me.id, playerId: seat, replace: false }).receipt.ok,
     ).toBe(true);
@@ -474,7 +601,7 @@ describe('authoritative room transactions', () => {
     expect(Object.values(game.commanders).filter((c) => c.ownerId === seat)).toEqual([
       { ...commanders[0], label: 'One renamed' },
     ]);
-    expect(game.damageReceived[seat]).not.toHaveProperty(commanders[1].id);
+    expect(game.damageReceived[f.room.me.seatId!]).not.toHaveProperty(commanders[1].id);
   });
   it('migrates existing rooms and saves pending choices across server restarts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mtg-join-profile-'));
@@ -638,7 +765,7 @@ describe('authoritative room transactions', () => {
     f.run(f.host.hash, { type: 'policy', everyoneEdits: true });
     expect(
       f.run(f.guest.hash, { type: 'adjust', playerId: other, field: 'life', delta: -1 }).receipt.ok,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       f.run(f.guest.hash, { type: 'customize', playerId: other, name: 'Hijacked', color: 'ember' }).receipt
         .ok,
@@ -651,14 +778,16 @@ describe('authoritative room transactions', () => {
     const id = f.room.seats[0].id,
       base = f.svc.view(f.room.id, f.host.hash).revision;
     const a = f.run(f.guest.hash, { type: 'adjust', playerId: id, field: 'life', delta: -1 }, base);
-    const b = f.run(f.host.hash, { type: 'adjust', playerId: id, field: 'life', delta: -1 }, base);
+    const own = f.room.me.seatId!;
+    const b = f.run(f.host.hash, { type: 'adjust', playerId: own, field: 'life', delta: -1 }, base);
     expect(a.receipt.ok && b.receipt.ok).toBe(true);
-    expect(b.view!.game!.players[id].life).toBe(38);
-    expect(f.run(f.host.hash, { type: 'set', playerId: id, field: 'life', value: 99 }, base).receipt.ok).toBe(
-      false,
-    );
+    expect(b.view!.game!.players[id].life).toBe(39);
+    expect(b.view!.game!.players[own].life).toBe(39);
+    expect(
+      f.run(f.guest.hash, { type: 'set', playerId: id, field: 'life', value: 99 }, base).receipt.ok,
+    ).toBe(false);
     expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(false);
-    expect(f.run(f.host.hash, { type: 'undo' }).view!.game!.players[id].life).toBe(39);
+    expect(f.run(f.host.hash, { type: 'undo' }).view!.game!.players[own].life).toBe(40);
     expect(f.run(f.host.hash, { type: 'undo' }).receipt.ok).toBe(false);
   });
   it('atomically assigns a seat and reports a competing request as taken', () => {
@@ -701,7 +830,7 @@ describe('authoritative room transactions', () => {
     const transfer = f.envelope(f.host.hash, { type: 'transfer', memberId: f.g.me.id });
     const moved = f.svc.execute(f.host.hash, transfer);
     expect(f.svc.execute(f.host.hash, transfer).receipt).toEqual(moved.receipt);
-    expect(moved.view!.me.seatId).toBeNull();
+    expect(moved.view!.me.seatId).toBe(f.room.me.seatId);
     expect(moved.view!.hostId).toBe(f.g.me.id);
     expect(f.svc.view(f.room.id, f.guest.hash).me.seatId).toBe(id);
   });
@@ -807,13 +936,18 @@ describe('authoritative room transactions', () => {
     const f = fixture(join(dir, 'rooms.sqlite'));
     const env = f.envelope(f.host.hash, {
       type: 'adjust',
-      playerId: f.room.seats[0].id,
+      playerId: f.room.me.seatId!,
       field: 'life',
       delta: -1,
     });
     const first = f.svc.execute(f.host.hash, env);
     for (let i = 0; i < 205; i++)
-      f.run(f.host.hash, { type: 'adjust', playerId: f.room.seats[1].id, field: 'life', delta: 1 });
+      f.run(f.host.hash, {
+        type: 'adjust',
+        playerId: f.room.me.seatId!,
+        field: 'life',
+        delta: i % 2 === 0 ? 1 : -1,
+      });
     expect(f.svc.view(f.room.id, f.host.hash).game!.history).toHaveLength(200);
     f.db.close();
     const db = openDatabase(join(dir, 'rooms.sqlite'));
@@ -822,10 +956,11 @@ describe('authoritative room transactions', () => {
     });
     const svc = new RoomService(db, config, () => 1_800_000_000_000);
     expect(svc.execute(f.host.hash, env).receipt).toEqual(first.receipt);
-    expect(svc.view(f.room.id, f.host.hash).game!.players[f.room.seats[0].id].life).toBe(39);
+    expect(svc.view(f.room.id, f.host.hash).game!.players[f.room.me.seatId!].life).toBe(40);
   });
   it('converges across eight guests and preserves the same recorded dice result', () => {
     const f = fixture(':memory:', 8);
+    f.run(f.host.hash, { type: 'release', memberId: f.room.me.id });
     const users = [f.guest, f.other, ...Array.from({ length: 6 }, f.session)];
     users.forEach((s, i) => {
       const view = f.svc.join(s.hash, f.room.code!, `Guest ${i}`);

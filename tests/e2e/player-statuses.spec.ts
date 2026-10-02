@@ -108,7 +108,9 @@ test('badges use per-source damage and independent partner tax, respect threshol
   ];
   await importGame(page, game);
   const tile = page.locator('.player-tile').first();
-  await expect(page.locator('.status-chip')).toHaveCount(0);
+  await expect(page.locator('.status-chip')).toHaveCount(9);
+  await expect(chip(tile, 'commander-damage').locator('.status-chip-value')).toHaveText('0');
+  await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText(['+0', '+0']);
   await page.getByRole('button', { name: 'Mira details', exact: true }).click();
   await setPoison(page, 5);
   await damage(page, sources[0].id, 11);
@@ -135,7 +137,7 @@ test('badges use per-source damage and independent partner tax, respect threshol
     /Thrasios, Triton Hero: next command-zone cast costs \+2/u,
   );
   await expect(tile.locator('.player-statuses')).toHaveAttribute('aria-label', 'Player status');
-  await expect(tile.locator('.player-statuses button')).toHaveCount(0);
+  await expect(tile.locator('.player-statuses button')).toHaveCount(3);
   await expect(page.getByTestId('life-0')).toHaveText('40');
   // Two different sources total 25, but neither has reached the 25-point warning.
   expect(Object.values((await savedGame(page)).damageReceived[game.order[0]])).toEqual([11, 14]);
@@ -163,7 +165,9 @@ test('badges use per-source damage and independent partner tax, respect threshol
   await page.getByRole('button', { name: 'Game menu', exact: true }).click();
   await page.getByRole('button', { name: 'Rematch · same seats', exact: true }).click();
   await page.getByRole('button', { name: 'Confirm', exact: true }).click();
-  await expect(page.locator('.status-chip')).toHaveCount(0);
+  await expect(page.locator('.status-chip')).toHaveCount(9);
+  await expect(chip(tile, 'commander-damage').locator('.status-chip-value')).toHaveText('0');
+  await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText(['+0', '+0']);
   await expect(page.getByRole('button', { name: 'Mira details', exact: true })).toBeVisible();
   await expect(page.getByTestId('life-0')).toHaveText('40');
 });
@@ -175,7 +179,8 @@ test('disabled trackers hide retained values while ended and eliminated seats ke
   disabled.players[disabled.order[0]].poison = 8;
   const commander = Object.values(disabled.commanders)[0];
   commander.casts = 3;
-  disabled.damageReceived[disabled.order[0]] = { [commander.id]: 20 };
+  const source = Object.values(disabled.commanders).find((entry) => entry.ownerId !== disabled.order[0])!;
+  disabled.damageReceived[disabled.order[0]] = { [source.id]: 20 };
   disabled.settings.commander = false;
   disabled.settings.poison = false;
   await importGame(page, disabled);
@@ -183,7 +188,7 @@ test('disabled trackers hide retained values while ended and eliminated seats ke
   const saved = await savedGame(page);
   expect(saved.players[saved.order[0]].poison).toBe(8);
   expect(saved.commanders[commander.id].casts).toBe(3);
-  expect(saved.damageReceived[saved.order[0]][commander.id]).toBe(20);
+  expect(saved.damageReceived[saved.order[0]][source.id]).toBe(20);
 
   await page.getByRole('button', { name: 'Home & recent games', exact: true }).click();
   const ended = structuredClone(disabled);
@@ -197,8 +202,10 @@ test('disabled trackers hide retained values while ended and eliminated seats ke
   const tile = page.locator('.player-tile').first();
   await expect(chip(tile, 'poison').locator('.status-chip-value')).toHaveText('8');
   await expect(chip(tile, 'commander-damage').locator('.status-chip-value')).toHaveText('20');
-  await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText('+6');
+  await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText(['+6', '+0']);
   await expect(page.getByRole('button', { name: "Decrease Mira's life", exact: true })).toBeDisabled();
+  await chip(tile, 'tax').first().click();
+  await expect(page.getByRole('button', { name: 'Record cast', exact: true })).toBeDisabled();
 });
 
 test('approved room players receive the same live badges and can only change their permitted seat', async ({
@@ -224,29 +231,61 @@ test('approved room players receive the same live badges and can only change the
     await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
     const source = Object.values(room.game!.commanders).find(
-      (commander) => commander.ownerId === room.game!.order[1],
+      (commander) => commander.ownerId === room.game!.order[0],
     )!;
-    await host.getByRole('button', { name: 'Rowan details', exact: true }).click();
-    await setPoison(host, 3);
-    await damage(host, source.id, 7);
-    await closePlayer(host, 'Rowan');
     await guest.getByRole('button', { name: 'Rowan details', exact: true }).click();
-    await guest.getByRole('button', { name: 'Record cast', exact: true }).click();
+    await setPoison(guest, 3);
     await closePlayer(guest, 'Rowan');
+    const guestTile = guest.locator('.player-tile').nth(1);
+    await chip(guestTile, 'commander-damage').click();
+    await expect(
+      guest
+        .getByRole('group', { name: 'Combat damage source', exact: true })
+        .getByRole('button', { name: /^Rowan:/u }),
+    ).toHaveCount(0);
+    await guest
+      .getByRole('button', { name: `Host: ${source.label}, 0 damage recorded`, exact: true })
+      .click();
+    await guest.getByRole('spinbutton', { name: 'Damage amount', exact: true }).fill('7');
+    await guest.getByRole('checkbox', { name: 'Also subtract this much life', exact: true }).uncheck();
+    await guest.getByRole('button', { name: 'Apply damage', exact: true }).click();
+    await expect(guest.getByRole('dialog')).toHaveCount(0);
+    await chip(guestTile, 'tax').click();
+    await guest.getByRole('button', { name: 'Record cast', exact: true }).click();
+    await expect(guest.locator('.commander-casts .tax')).toContainText('+2');
+    await guest.getByRole('button', { name: 'Close Commander tax', exact: true }).click();
     for (const device of [host, guest]) {
-      const tile = device.locator('.player-tile').first();
+      const tile = device.locator('.player-tile').nth(1);
       await expect(chip(tile, 'poison').locator('.status-chip-value')).toHaveText('3');
       await expect(chip(tile, 'commander-damage').locator('.status-chip-value')).toHaveText('7');
       await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText('+2');
-      await expect(device.getByTestId('life-0')).toHaveText('40');
+      await expect(device.getByTestId('life-1')).toHaveText('40');
     }
-    await guest.getByRole('button', { name: 'Player 2 details', exact: true }).click();
+    await guest.getByRole('button', { name: 'Host details', exact: true }).click();
     await expect(guest.getByRole('button', { name: 'Increase poison', exact: true })).toBeDisabled();
     await expect(guest.getByRole('button', { name: 'Record cast', exact: true })).toBeDisabled();
     await expect(guest.getByRole('button', { name: 'Record combat damage', exact: true })).toBeDisabled();
-    await closePlayer(guest, 'Player 2');
+    await closePlayer(guest, 'Host');
+    await chip(guest.locator('.player-tile').first(), 'commander-damage').click();
+    await expect(
+      guest.getByRole('button', { name: `Host: ${source.label}, 0 damage recorded`, exact: true }),
+    ).toHaveCount(0);
+    await guest
+      .getByRole('group', { name: 'Combat damage source', exact: true })
+      .getByRole('button')
+      .first()
+      .click();
+    await expect(guest.getByRole('button', { name: 'Apply damage', exact: true })).toBeDisabled();
+    await guest.getByRole('button', { name: 'Close Commander damage', exact: true }).click();
+    await chip(guest.locator('.player-tile').first(), 'tax').click();
+    await expect(guest.getByRole('button', { name: 'Record cast', exact: true })).toBeDisabled();
+    await guest.getByRole('button', { name: 'Close Commander tax', exact: true }).click();
+    // Host privileges also do not grant another player's quick controls.
+    await chip(host.locator('.player-tile').nth(1), 'tax').click();
+    await expect(host.getByRole('button', { name: 'Record cast', exact: true })).toBeDisabled();
+    await host.getByRole('button', { name: 'Close Commander tax', exact: true }).click();
     await guest.reload();
-    await expect(chip(guest.locator('.player-tile').first(), 'tax').locator('.status-chip-value')).toHaveText(
+    await expect(chip(guest.locator('.player-tile').nth(1), 'tax').locator('.status-chip-value')).toHaveText(
       '+2',
     );
     await guest.getByRole('button', { name: 'My seat', exact: true }).click();
@@ -270,10 +309,242 @@ test('approved room players receive the same live badges and can only change the
     expect(bounds).toEqual({ inside: true, horizontalOverflow: false });
     await guest.screenshot({ path: test.info().outputPath('status-my-seat.png') });
     await guest.getByRole('button', { name: "Decrease Rowan's life", exact: true }).click();
-    await expect(host.getByTestId('life-0')).toHaveText('39');
+    await expect(host.getByTestId('life-1')).toHaveText('39');
   } finally {
     await guestContext.close();
   }
+});
+
+test('quick damage saves life and the selected source together, remembers each seat, and preserves undo', async ({
+  page,
+}) => {
+  const game = fixture();
+  await importGame(page, game);
+  const tile = page.locator('.player-tile').first();
+  const shortcut = chip(tile, 'commander-damage');
+  await shortcut.click();
+  const panel = page.getByRole('dialog', { name: 'Commander damage', exact: true });
+  const apply = panel.getByRole('button', { name: 'Apply damage', exact: true });
+  await expect(apply).toBeDisabled();
+  await panel
+    .getByRole('button', { name: 'Rowan: Lathril, Blade of the Elves, 0 damage recorded', exact: true })
+    .click();
+  await panel.getByRole('button', { name: 'Increase damage amount', exact: true }).click();
+  await panel.getByRole('button', { name: 'Increase damage amount', exact: true }).click();
+  const amount = panel.getByRole('spinbutton', { name: 'Damage amount', exact: true });
+  await expect(amount).toHaveValue('3');
+  await panel.getByRole('button', { name: 'Decrease damage amount', exact: true }).click();
+  await expect(amount).toHaveValue('2');
+  for (const invalid of ['0', '-1', '1.5', '1000000', '']) {
+    await amount.fill(invalid);
+    await expect(apply).toBeDisabled();
+  }
+  await amount.fill('7');
+  await expect(panel.locator('.quick-damage-preview')).toContainText('40 → 33');
+  const audit = await new AxeBuilder({ page })
+    .include('.sheet')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
+    .analyze();
+  expect(audit.violations).toEqual([]);
+  await page.screenshot({ path: test.info().outputPath('quick-commander-damage.png') });
+  await apply.click();
+  await expect(panel).toHaveCount(0);
+  await expect(shortcut).toBeFocused();
+  await expect(page.getByTestId('life-0')).toHaveText('33');
+  await expect(shortcut.locator('.status-chip-value')).toHaveText('7');
+  const after = await savedGame(page);
+  expect(after.revision).toBe(game.revision + 1);
+  expect(Object.values(after.damageReceived[game.order[0]])).toEqual([7]);
+  await shortcut.click();
+  await expect(
+    panel.getByRole('button', { name: 'Rowan: Lathril, Blade of the Elves, 7 damage recorded', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await amount.fill('4');
+  await panel.getByRole('checkbox', { name: 'Also subtract this much life', exact: true }).uncheck();
+  await apply.click();
+  await expect(panel).toHaveCount(0);
+  await expect(shortcut.locator('.status-chip-value')).toHaveText('11');
+  await expect(page.getByTestId('life-0')).toHaveText('33');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(shortcut.locator('.status-chip-value')).toHaveText('7');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(shortcut.locator('.status-chip-value')).toHaveText('0');
+  await expect(page.getByTestId('life-0')).toHaveText('40');
+  await chip(page.locator('.player-tile').nth(1), 'commander-damage').click();
+  await expect(panel.getByRole('button', { pressed: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close Commander damage', exact: true }).click();
+  await expect(page.getByText('Saved here', { exact: true })).toBeVisible();
+  await page.reload();
+  await shortcut.click();
+  await expect(
+    panel.getByRole('button', { name: 'Rowan: Lathril, Blade of the Elves, 0 damage recorded', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    panel.getByRole('checkbox', { name: 'Also subtract this much life', exact: true }),
+  ).toBeChecked();
+  await page.goBack();
+  await expect(panel).toHaveCount(0);
+});
+
+test('damage controls exclude each recipient’s own commanders and ignore a remembered own source', async ({
+  page,
+}) => {
+  await importGame(page, fixture());
+  const game = await savedGame(page);
+  for (const playerId of game.order.slice(0, 2)) {
+    const player = game.players[playerId];
+    const owned = Object.values(game.commanders).filter((entry) => entry.ownerId === playerId);
+    const opponents = game.order
+      .filter((id) => id !== playerId)
+      .flatMap((id) => Object.values(game.commanders).filter((entry) => entry.ownerId === id));
+    await page.evaluate(
+      ({ gameId, playerId, commanderId }) => {
+        sessionStorage.setItem(`mtg-util:damage-source:${gameId}:${playerId}`, commanderId);
+      },
+      { gameId: game.id, playerId, commanderId: owned[0].id },
+    );
+    const tile = page.locator('.player-tile').nth(game.order.indexOf(playerId));
+    await chip(tile, 'commander-damage').click();
+    const panel = page.getByRole('dialog', { name: 'Commander damage', exact: true });
+    const sources = panel.getByRole('group', { name: 'Combat damage source', exact: true });
+    await expect(sources.getByRole('button')).toHaveCount(opponents.length);
+    for (const commander of owned) {
+      await expect(
+        sources.getByRole('button', {
+          name: `${player.name}: ${commander.label}, 0 damage recorded`,
+          exact: true,
+        }),
+      ).toHaveCount(0);
+    }
+    await expect(sources.getByRole('button', { pressed: true })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Apply damage', exact: true })).toBeDisabled();
+    await sources.getByRole('button').first().click();
+    await panel.getByRole('spinbutton', { name: 'Damage amount', exact: true }).fill('2');
+    await panel.getByRole('button', { name: 'Apply damage', exact: true }).click();
+    await expect(tile.locator('.status-chip[data-status="commander-damage"] .status-chip-value')).toHaveText(
+      '2',
+    );
+
+    await page.getByRole('button', { name: `${player.name} details`, exact: true }).click();
+    const source = page.getByRole('combobox', { name: 'Combat damage source', exact: true });
+    expect(
+      await source
+        .locator('option')
+        .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value)),
+    ).toEqual(opponents.map((commander) => commander.id));
+    await expect(source).toHaveValue(opponents[0].id);
+    await page.getByRole('spinbutton', { name: 'Damage amount', exact: true }).fill('3');
+    await page.getByRole('button', { name: 'Record combat damage', exact: true }).click();
+    await page.getByText('Correct recorded totals', { exact: false }).click();
+    await expect(page.locator('.damage-correction')).toHaveCount(opponents.length);
+    for (const commander of owned) {
+      await expect(
+        page.getByRole('spinbutton', {
+          name: `${commander.label} recorded damage`,
+          exact: true,
+        }),
+      ).toHaveCount(0);
+    }
+    const correction = page.locator('.damage-correction').first();
+    await expect(correction.getByRole('spinbutton')).toHaveValue('5');
+    await correction.getByRole('spinbutton').fill('4');
+    await correction.getByRole('button', { name: 'Correct', exact: true }).click();
+    await expect(correction).toContainText('4 recorded');
+    await closePlayer(page, player.name);
+    await expect(chip(tile, 'tax')).toHaveCount(owned.length);
+    await expect(page.getByTestId(`life-${game.order.indexOf(playerId)}`)).toHaveText('35');
+    expect((await savedGame(page)).damageReceived[playerId]).toEqual({ [opponents[0].id]: 4 });
+  }
+});
+
+test('a solo seat cannot record commander damage and retains its own partner tax controls', async ({
+  page,
+}) => {
+  const setup = defaultSetup(1);
+  setup.seats[0].commanders = ['Solo commander', 'Solo partner'];
+  const game = createGame(setup, newId, Date.now());
+  const playerId = game.order[0];
+  const owned = Object.values(game.commanders);
+  // Older backups remain readable, but self-damage no longer produces badges or warnings.
+  game.damageReceived[playerId] = { [owned[0].id]: 30 };
+  await importGame(page, game);
+  const tile = page.locator('.player-tile').first();
+  await expect(chip(tile, 'commander-damage').locator('.status-chip-value')).toHaveText('0');
+  await expect(chip(tile, 'commander-damage')).not.toHaveClass(/is-warning/u);
+  await chip(tile, 'commander-damage').click();
+  await expect(page.getByText('No opposing commanders are available.', { exact: true })).toBeVisible();
+  await expect(page.locator('.commander-source')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Apply damage', exact: true })).toBeDisabled();
+  await expect(page.getByRole('spinbutton', { name: 'Damage amount', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Close Commander damage', exact: true }).click();
+  await page.getByRole('button', { name: 'Player 1 details', exact: true }).click();
+  await expect(page.getByText('No opposing commanders are available.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Combat damage source', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Record combat damage', exact: true })).toBeDisabled();
+  await expect(page.locator('.damage-correction')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Record cast', exact: true })).toHaveCount(2);
+  await page.getByRole('button', { name: 'Record cast', exact: true }).first().click();
+  await expect(page.locator('.commander-casts').first().locator('.tax')).toContainText('+2');
+  await closePlayer(page, 'Player 1');
+  await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText(['+2', '+0']);
+  expect((await savedGame(page)).damageReceived).toEqual(game.damageReceived);
+  await expect(page.getByTestId('life-0')).toHaveText('40');
+});
+
+test('quick tax opens the tapped partner and records or corrects their casts independently', async ({
+  page,
+}) => {
+  await importGame(page, fixture());
+  const tile = page.locator('.player-tile').first();
+  await chip(tile, 'tax').nth(1).click();
+  const panel = page.getByRole('dialog', { name: 'Commander tax', exact: true });
+  await expect(panel.getByRole('heading', { name: 'Thrasios, Triton Hero', exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'Record cast', exact: true }).click();
+  await expect(panel.locator('.tax')).toContainText('+2');
+  await panel.getByRole('button', { name: 'Mira: Tymna the Weaver, tax +0', exact: true }).click();
+  await panel.getByRole('button', { name: 'Record cast', exact: true }).click();
+  await expect(panel.locator('.tax')).toContainText('+2');
+  await panel.getByRole('button', { name: 'Record cast', exact: true }).click();
+  await expect(panel.locator('.tax')).toContainText('+4');
+  await page.screenshot({ path: test.info().outputPath('quick-commander-tax.png') });
+  await panel.locator('summary').filter({ hasText: 'Correct casts' }).click();
+  await panel.getByRole('spinbutton', { name: 'Previous command-zone casts', exact: true }).fill('1');
+  await panel.getByRole('button', { name: 'Correct casts', exact: true }).click();
+  await expect(panel.locator('.tax')).toContainText('+2');
+  await page.getByRole('button', { name: 'Close Commander tax', exact: true }).click();
+  await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText(['+2', '+2']);
+  await expect(page.getByTestId('life-0')).toHaveText('40');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(chip(tile, 'tax').locator('.status-chip-value')).toHaveText(['+4', '+2']);
+});
+
+test('quick damage retains the draft and every total when the durable save fails', async ({ page }) => {
+  await importGame(page, fixture());
+  const before = await savedGame(page);
+  await chip(page.locator('.player-tile').first(), 'commander-damage').click();
+  const panel = page.getByRole('dialog', { name: 'Commander damage', exact: true });
+  await panel
+    .getByRole('button', { name: 'Rowan: Lathril, Blade of the Elves, 0 damage recorded', exact: true })
+    .click();
+  await panel.getByRole('spinbutton', { name: 'Damage amount', exact: true }).fill('6');
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value: unknown, key?: IDBValidKey) {
+      const result = key === undefined ? original.call(this, value) : original.call(this, value, key);
+      if (this.name === 'records' && key === 'active') {
+        IDBObjectStore.prototype.put = original;
+        this.transaction.abort();
+      }
+      return result;
+    };
+  });
+  await panel.getByRole('button', { name: 'Apply damage', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText('Damage was not confirmed');
+  await expect(panel.getByRole('spinbutton', { name: 'Damage amount', exact: true })).toHaveValue('6');
+  await expect(panel.getByRole('button', { name: 'Apply damage', exact: true })).toBeDisabled();
+  expect(await savedGame(page)).toEqual(before);
+  await page.getByRole('button', { name: 'Close Commander damage', exact: true }).click();
+  await expect(page.getByTestId('life-0')).toHaveText('40');
 });
 
 test('status rows with partner artwork remain legible and leave touch controls usable on narrow and shared tables', async ({
@@ -381,13 +652,18 @@ test('four normal badges fit on one line and all four seats stay reachable on a 
   const board = page.locator('.board');
   await expect(board).toHaveAttribute('data-layout', 'shared');
   await expect(board.locator('[data-facing="across"]')).toHaveCount(2);
-  await expect(board.locator('.status-chip')).toHaveCount(4);
+  await expect(board.locator('.player-tile').first().locator('.status-chip')).toHaveCount(4);
   const geometry = await board.evaluate((element) => {
     const bounds = element.getBoundingClientRect();
     const tiles = [...element.querySelectorAll('.player-tile')].map((tile) => tile.getBoundingClientRect());
-    const chips = [...element.querySelectorAll('.status-chip')].map((badge) => badge.getBoundingClientRect());
+    const chips = [...element.querySelector('.player-tile')!.querySelectorAll('.status-chip')].map((badge) =>
+      badge.getBoundingClientRect(),
+    );
     return {
-      oneLine: Math.max(...chips.map((box) => box.top)) - Math.min(...chips.map((box) => box.top)) < 1,
+      oneLine:
+        Math.max(...chips.map((box) => box.top + box.height / 2)) -
+          Math.min(...chips.map((box) => box.top + box.height / 2)) <
+        1,
       noScroll: element.scrollHeight <= element.clientHeight + 1,
       allVisible: tiles.every(
         (box) =>

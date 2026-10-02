@@ -155,15 +155,29 @@ describe('local transactions and recovery', () => {
     const legacy: Partial<typeof profile> = { ...profile, rotations: { seat: true } };
     delete legacy.tableLayout;
     delete legacy.autoTableLayout;
+    delete legacy.rotationDefaultsVersion;
     delete legacy.theme;
+    delete legacy.colorTheme;
+    delete legacy.accentColor;
+    delete legacy.tableFinish;
     await a.put('profile', legacy);
     expect(await a.profile()).toEqual({
       ...legacy,
       tableLayout: 'upright',
       autoTableLayout: true,
+      rotationDefaultsVersion: 1,
       theme: 'system',
+      colorTheme: 'classic',
+      accentColor: 'theme',
+      tableFinish: 'glow',
     });
     await a.put('profile', { ...legacy, tableLayout: 'shared', autoTableLayout: false });
+    const migrated = await a.profile();
+    expect(migrated.autoTableLayout).toBe(true);
+    expect(migrated.rotations).toEqual({ seat: true });
+    // A fixed layout selected after adopting the default remains an explicit
+    // preference, including after reopening this browser's database.
+    await a.put('profile', { ...migrated, autoTableLayout: false });
     const reopened = new Repository('b', a.databaseName);
     await reopened.open();
     expect((await reopened.profile()).tableLayout).toBe('shared');
@@ -180,7 +194,8 @@ describe('local transactions and recovery', () => {
       {
         type: 'damage',
         playerId: original.order[0],
-        commanderId: Object.keys(original.commanders)[0],
+        commanderId: Object.values(original.commanders).find((entry) => entry.ownerId !== original.order[0])!
+          .id,
         amount: 7,
         subtractLife: true,
       },

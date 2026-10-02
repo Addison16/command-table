@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { RoomView } from '../../src/shared/schema.js';
-test('independent browsers join, request/approve a seat, converge and reconnect', async ({
+test('independent browsers control only their own seats, converge and reconnect', async ({
   page: host,
   browser,
 }) => {
@@ -14,6 +14,8 @@ test('independent browsers join, request/approve a seat, converge and reconnect'
   await host.getByLabel('Your display name').fill('Mira');
   await host.getByRole('dialog').getByRole('button', { name: 'Create room', exact: true }).click();
   await expect(host.getByRole('button', { name: 'Live room', exact: true })).toBeVisible();
+  await expect(host.getByRole('button', { name: "Decrease Mira's life" })).toBeEnabled();
+  await expect(host.getByRole('button', { name: "Decrease Player 2's life" })).toBeDisabled();
   await host.getByRole('button', { name: 'Live room', exact: true }).click();
   const url = await host.getByLabel('Join link', { exact: true }).inputValue();
   await guest.goto(url);
@@ -23,26 +25,46 @@ test('independent browsers join, request/approve a seat, converge and reconnect'
   expect(await guest.locator('.life-total').count()).toBe(0);
   await guest.getByRole('button', { name: 'Request seat', exact: true }).first().click();
   await host.getByRole('button', { name: 'Approve seat', exact: true }).click();
-  await expect(guest.getByTestId('life-0')).toHaveText('40');
-  await expect(guest.getByRole('button', { name: "Decrease Player 2's life" })).toBeDisabled();
+  await expect(guest.getByTestId('life-1')).toHaveText('40');
+  await expect(guest.getByRole('button', { name: "Decrease Mira's life" })).toBeDisabled();
   await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
+  await expect(host.getByRole('button', { name: "Decrease Alex's life" })).toBeDisabled();
+  for (const [viewer, other] of [
+    [host, 'Alex'],
+    [guest, 'Mira'],
+  ] as const) {
+    await viewer.getByRole('button', { name: `${other} details`, exact: true }).click();
+    await expect(viewer.getByRole('button', { name: 'Decrease life', exact: true })).toBeDisabled();
+    await expect(viewer.getByRole('button', { name: 'Increase poison', exact: true })).toBeDisabled();
+    await expect(viewer.getByRole('button', { name: 'Record cast', exact: true })).toBeDisabled();
+    await expect(viewer.getByRole('button', { name: 'Record combat damage', exact: true })).toBeDisabled();
+    await viewer.getByText('Edit player & commanders', { exact: true }).click();
+    await expect(viewer.getByRole('textbox', { name: 'Player name', exact: true })).toBeDisabled();
+    await expect(viewer.getByRole('textbox', { name: 'Commander 1 name', exact: true })).toBeDisabled();
+    await expect(viewer.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+    await viewer.getByRole('button', { name: `Close ${other}`, exact: true }).click();
+  }
   await Promise.all([
-    host.getByRole('button', { name: "Decrease Alex's life" }).click(),
+    host.getByRole('button', { name: "Decrease Mira's life" }).click(),
     guest.getByRole('button', { name: "Decrease Alex's life" }).click(),
   ]);
-  await expect(host.getByTestId('life-0')).toHaveText('38');
-  await expect(guest.getByTestId('life-0')).toHaveText('38');
+  for (const device of [host, guest]) {
+    await expect(device.getByTestId('life-0')).toHaveText('39');
+    await expect(device.getByTestId('life-1')).toHaveText('39');
+  }
   await guestContext.setOffline(true);
   await expect(guest.getByText('Reconnecting — changes paused', { exact: false })).toBeVisible({
     timeout: 40000,
   });
   await expect(guest.getByRole('button', { name: "Decrease Alex's life" })).toBeDisabled();
-  await host.getByRole('button', { name: "Decrease Alex's life" }).click();
+  await host.getByRole('button', { name: "Decrease Mira's life" }).click();
   await guestContext.setOffline(false);
-  await expect(guest.getByTestId('life-0')).toHaveText('37');
+  await expect(guest.getByTestId('life-0')).toHaveText('38');
+  await expect(guest.getByTestId('life-1')).toHaveText('39');
   await expect(guest.getByRole('button', { name: "Decrease Alex's life" })).toBeEnabled();
   await guest.reload();
-  await expect(guest.getByTestId('life-0')).toHaveText('37');
+  await expect(guest.getByTestId('life-0')).toHaveText('38');
+  await expect(guest.getByTestId('life-1')).toHaveText('39');
   await expect(guest.getByRole('button', { name: "Decrease Alex's life" })).toBeEnabled();
   await guest.getByRole('button', { name: 'My seat', exact: true }).click();
   await expect(guest.locator('.my-view')).toBeVisible();
@@ -66,7 +88,8 @@ test('independent browsers join, request/approve a seat, converge and reconnect'
   await guest.getByRole('button', { name: 'Home & recent games', exact: true }).click();
   await guest.getByRole('button', { name: /^Resume shared room:/ }).click();
   await expect(guest.getByRole('button', { name: 'Live room', exact: true })).toBeVisible();
-  await expect(guest.getByTestId('life-0')).toHaveText('37');
+  await expect(guest.locator('.my-view')).toBeVisible();
+  await expect(guest.getByTestId('life-1')).toHaveText('39');
   await expect(guest.getByRole('button', { name: "Decrease Alex's life" })).toBeEnabled();
   expect(errors).toEqual([]);
   await guestContext.close();
@@ -98,7 +121,7 @@ test('refresh after a lost acknowledgement retries the original durable operatio
   await page.getByRole('dialog').getByRole('button', { name: 'Create room', exact: true }).click();
   const room = (await (await response).json()) as RoomView;
   await expect(page.getByRole('button', { name: 'Live room', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: "Decrease Player 1's life" }).click();
+  await page.getByRole('button', { name: "Decrease Host's life" }).click();
   await expect.poll(() => lostOperation).not.toBe('');
   await expect
     .poll(
@@ -124,4 +147,57 @@ test('refresh after a lost acknowledgement retries the original durable operatio
     });
   }, room.id);
   expect(pending).toHaveLength(0);
+});
+
+test('automatic reconnect reconciles a lost acknowledgement without repeating the player’s change', async ({
+  page,
+}) => {
+  let lostOperation = '';
+  let lostAcknowledgement = false;
+  await page.routeWebSocket('**/api/rooms/**/live?*', (route) => {
+    const server = route.connectToServer();
+    let hiddenOperation = '';
+    route.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (!lostOperation && message.type === 'command' && message.envelope.command.type === 'adjust') {
+        lostOperation = hiddenOperation = message.envelope.operationId;
+      }
+      server.send(raw);
+    });
+    server.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (hiddenOperation && ['ack', 'state'].includes(message.type)) {
+        if (message.receipt?.operationId === hiddenOperation) {
+          lostAcknowledgement = true;
+          void route.close({ code: 1012, reason: 'Test disconnect after durable server commit' });
+          void server.close();
+        }
+        return;
+      }
+      route.send(raw);
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Create room', exact: true }).click();
+  const created = page.waitForResponse(
+    (response) => response.url().endsWith('/api/rooms') && response.request().method() === 'POST',
+  );
+  await page.getByRole('dialog').getByRole('button', { name: 'Create room', exact: true }).click();
+  const room = (await (await created).json()) as RoomView;
+  await page.getByRole('button', { name: "Decrease Host's life", exact: true }).click();
+  await expect.poll(() => lostAcknowledgement).toBe(true);
+  await expect(page.getByRole('button', { name: "Decrease Host's life", exact: true })).toBeEnabled({
+    timeout: 15000,
+  });
+  await expect(page.getByTestId('life-0')).toHaveText('39');
+  const changed = ((await (await page.request.get(`/api/rooms/${room.id}`)).json()) as RoomView).game!;
+  expect(changed.players[changed.order[0]].life).toBe(39);
+  expect(changed.order.slice(1).map((id) => changed.players[id].life)).toEqual([40, 40, 40]);
+  expect(changed.history.filter((entry) => entry.operationId === lostOperation)).toHaveLength(1);
+  expect(changed.history).toHaveLength(1);
+  await page.reload();
+  await expect(page.getByTestId('life-0')).toHaveText('39');
+  expect(((await (await page.request.get(`/api/rooms/${room.id}`)).json()) as RoomView).game).toEqual(
+    changed,
+  );
 });

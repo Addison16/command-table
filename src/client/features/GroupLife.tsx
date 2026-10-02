@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LIMIT } from '../../shared/schema.js';
-import { isHost, notify, saveGroupLife, useApp } from '../app/store.js';
+import { notify, saveGroupLife, useApp } from '../app/store.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import '../styles/group-life.css';
 
@@ -42,14 +42,12 @@ export function GroupLife({ onClose }: { onClose: () => void }) {
     amountsValid &&
     (!caster || caster.life + gain <= LIMIT) &&
     targets.every((player) => player && player.life - loss >= -LIMIT);
-  const host = isHost();
   const available =
-    host &&
+    state.mode === 'local' &&
     !state.readOnly &&
     !state.recovery &&
     !state.pending &&
-    game.status === 'active' &&
-    (state.mode === 'local' || state.connected);
+    game.status === 'active';
   const valid = available && participantsValid && amountsValid && withinBounds && !needsReview;
   const changeCaster = (id: string) => {
     setCasterId(id);
@@ -228,9 +226,8 @@ export function GroupLife({ onClose }: { onClose: () => void }) {
             Choose at least one opponent still in the game. The caster must also be in the game.
           </p>
         )}
-        {!host && <p className="hint">The room host applies group effects for the table.</p>}
-        {state.mode === 'room' && !state.connected && (
-          <p className="hint">Reconnect before applying a group effect.</p>
+        {state.mode === 'room' && (
+          <p className="hint">In shared rooms, each player records life changes on their own seat.</p>
         )}
         {state.readOnly && (
           <p className="hint">Another tab controls this game. Take over there before editing.</p>

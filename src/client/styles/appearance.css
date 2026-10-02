@@ -1,0 +1,343 @@
+@import './table-finishes.css';
+
+@layer base {
+  /* The same palette seeds paint both the app and its theme previews. */
+  [data-color-theme='classic'] {
+    --palette-page-dark: #090d14;
+    --palette-surface-dark: #141b28;
+    --palette-raised-dark: #202a3a;
+    --palette-page-light: #f5f1e8;
+    --palette-surface-light: #fffdf8;
+    --palette-raised-light: #ece4d6;
+    --palette-accent-dark: #d6b66a;
+    --palette-accent-light: #77551d;
+  }
+  [data-color-theme='arcane'] {
+    --palette-page-dark: #100d1b;
+    --palette-surface-dark: #1c1630;
+    --palette-raised-dark: #2b2142;
+    --palette-page-light: #f4f0fa;
+    --palette-surface-light: #fffbff;
+    --palette-raised-light: #eae1f4;
+    --palette-accent-dark: #c5a4ef;
+    --palette-accent-light: #71429c;
+  }
+  [data-color-theme='forest'] {
+    --palette-page-dark: #091411;
+    --palette-surface-dark: #11231b;
+    --palette-raised-dark: #20382b;
+    --palette-page-light: #eff4e9;
+    --palette-surface-light: #fcfff7;
+    --palette-raised-light: #e0ebd7;
+    --palette-accent-dark: #9cceac;
+    --palette-accent-light: #366447;
+  }
+  [data-color-theme='ocean'] {
+    --palette-page-dark: #07131c;
+    --palette-surface-dark: #102431;
+    --palette-raised-dark: #1b3546;
+    --palette-page-light: #edf5f8;
+    --palette-surface-light: #f9fdff;
+    --palette-raised-light: #dcecf2;
+    --palette-accent-dark: #8fcfe4;
+    --palette-accent-light: #256580;
+  }
+  [data-color-theme='ember'] {
+    --palette-page-dark: #1b1010;
+    --palette-surface-dark: #2c1b18;
+    --palette-raised-dark: #412923;
+    --palette-page-light: #fbf1e9;
+    --palette-surface-light: #fffaf5;
+    --palette-raised-light: #f1e0d2;
+    --palette-accent-dark: #edb08a;
+    --palette-accent-light: #8c4929;
+  }
+  [data-color-theme='monochrome'] {
+    --palette-page-dark: #101214;
+    --palette-surface-dark: #1d2024;
+    --palette-raised-dark: #2d3136;
+    --palette-page-light: #f2f3f5;
+    --palette-surface-light: #ffffff;
+    --palette-raised-light: #e3e5e8;
+    --palette-accent-dark: #cbd3de;
+    --palette-accent-light: #485364;
+  }
+
+  :root {
+    --table-texture: linear-gradient(transparent, transparent);
+    --table-glow: radial-gradient(ellipse at 50% -30%, var(--page-glow), transparent 65%);
+    --player-glow-strength: 22%;
+  }
+  :root[data-color-theme] {
+    --palette-page: var(--palette-page-dark);
+    --palette-surface: var(--palette-surface-dark);
+    --palette-raised: var(--palette-raised-dark);
+  }
+  :root[data-color-theme][data-theme='light'] {
+    --palette-page: var(--palette-page-light);
+    --palette-surface: var(--palette-surface-light);
+    --palette-raised: var(--palette-raised-light);
+  }
+  :root[data-color-theme]:not([data-color-theme='classic']) {
+    --page-color: var(--palette-page);
+    --page-glow: color-mix(in srgb, var(--gold) 16%, transparent);
+    --surface: var(--palette-surface);
+    --surface-raised: var(--palette-raised);
+    --surface-hover: color-mix(in srgb, var(--palette-raised) 90%, var(--text));
+    --surface-inset: var(--palette-page);
+    --surface-subtle: color-mix(in srgb, var(--text) 2%, transparent);
+    --surface-floating: var(--palette-surface);
+    --text: #f2f3f7;
+    --soft-text: #ced5df;
+    --muted: #bac4d1;
+    --subtle-text: #a4b0c1;
+    --line: color-mix(in srgb, var(--text) 14%, transparent);
+    --control-line: color-mix(in srgb, var(--text) 22%, transparent);
+    --control-background: color-mix(in srgb, var(--text) 3%, transparent);
+    --control-hover: color-mix(in srgb, var(--text) 7%, transparent);
+    --control-hover-line: color-mix(in srgb, var(--text) 35%, transparent);
+    --input-background: var(--palette-surface);
+    --input-line: color-mix(in srgb, var(--text) 40%, var(--palette-surface));
+    --mode-gradient: linear-gradient(135deg, var(--palette-surface), var(--palette-page));
+    --shared-mode-gradient: var(--mode-gradient);
+    --tile-gradient: linear-gradient(135deg, var(--palette-surface), var(--palette-page));
+    --delta-background: var(--palette-surface);
+    --eliminated-background: var(--palette-page);
+    --sheet-gradient: linear-gradient(140deg, var(--palette-surface), var(--palette-page) 75%);
+    --sheet-line: var(--control-line);
+    --sheet-footer: var(--palette-page);
+    --sheet-handle: color-mix(in srgb, var(--text) 35%, transparent);
+    --switch-background: color-mix(in srgb, var(--palette-raised) 85%, var(--text));
+    --status-gradient: linear-gradient(155deg, var(--palette-raised), var(--palette-surface));
+    --dice-backdrop: color-mix(in srgb, var(--palette-page) 65%, transparent);
+    --dice-heading: var(--text);
+    --dice-caption: var(--soft-text);
+    --dice-eyebrow: var(--palette-page);
+    --dice-gradient: var(--sheet-gradient);
+    --dice-secondary: var(--palette-surface);
+  }
+  :root[data-theme='light'][data-color-theme]:not([data-color-theme='classic']) {
+    --text: #262b31;
+    --soft-text: #4b5260;
+    --muted: #586170;
+    --subtle-text: #586170;
+    --tile-gradient: linear-gradient(135deg, var(--palette-surface), var(--palette-raised));
+    --sheet-gradient: linear-gradient(140deg, var(--palette-surface), var(--palette-page) 75%);
+    --dice-heading-shadow: 0 2px 6px var(--palette-surface);
+  }
+
+  [data-accent-color='theme'] {
+    --chosen-accent-dark: #d6b66a;
+    --chosen-accent-light: #77551d;
+  }
+  [data-accent-color='gold'] {
+    --chosen-accent-dark: #ef7775;
+    --chosen-accent-light: #a12d36;
+  }
+  [data-accent-color='violet'] {
+    --chosen-accent-dark: #c5a4ef;
+    --chosen-accent-light: #71429c;
+  }
+  [data-accent-color='green'] {
+    --chosen-accent-dark: #9cceac;
+    --chosen-accent-light: #366447;
+  }
+  [data-accent-color='blue'] {
+    --chosen-accent-dark: #9cbffa;
+    --chosen-accent-light: #315d96;
+  }
+  [data-accent-color='rose'] {
+    --chosen-accent-dark: #edabc7;
+    --chosen-accent-light: #97365e;
+  }
+  [data-accent-color='teal'] {
+    --chosen-accent-dark: #8bd2ca;
+    --chosen-accent-light: #226963;
+  }
+  [data-accent-color='copper'] {
+    --chosen-accent-dark: #edb08a;
+    --chosen-accent-light: #8c4929;
+  }
+  :root[data-color-theme][data-accent-color] {
+    --gold: var(--chosen-accent-dark);
+    --accent-text: color-mix(in srgb, var(--gold) 85%, var(--text));
+    --accent-line: color-mix(in srgb, var(--gold) 30%, transparent);
+    --accent-line-strong: color-mix(in srgb, var(--gold) 55%, transparent);
+    --accent-wash: color-mix(in srgb, var(--gold) 8%, transparent);
+    --accent-soft: color-mix(in srgb, var(--gold) 4%, transparent);
+    --primary-background: var(--gold);
+    --primary-text: #111318;
+    --primary-hover: color-mix(in srgb, var(--gold) 85%, #ffffff);
+    --switch-active: color-mix(in srgb, var(--gold) 70%, var(--page-color));
+    --switch-active-thumb: var(--primary-text);
+    --dice-result: var(--gold);
+    --dice-value: var(--accent-text);
+  }
+  :root[data-color-theme][data-accent-color][data-theme='light'] {
+    --gold: var(--chosen-accent-light);
+    --primary-text: #ffffff;
+    --primary-hover: color-mix(in srgb, var(--gold) 85%, #000000);
+  }
+
+  :root[data-theme][data-color-theme][data-table-finish='plain'] {
+    --table-glow: linear-gradient(transparent, transparent);
+    --player-glow-strength: 0%;
+    --tile-gradient: var(--surface);
+    --mode-gradient: var(--surface);
+    --shared-mode-gradient: var(--surface);
+    --sheet-gradient: var(--surface);
+  }
+}
+
+@layer components {
+  .appearance-group {
+    min-width: 0;
+    margin: 22px 0;
+    padding: 0;
+    border: 0;
+  }
+  .appearance-group legend {
+    padding: 0;
+    margin-bottom: 10px;
+    color: var(--soft-text);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .appearance-group input {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .theme-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .theme-option,
+  .accent-option,
+  .finish-option {
+    position: relative;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .theme-card,
+  .accent-card,
+  .finish-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border: 1px solid var(--control-line);
+    border-radius: 10px;
+    background: var(--control-background);
+  }
+  .theme-card {
+    padding: 8px;
+    gap: 6px;
+  }
+  .theme-option:hover .theme-card,
+  .accent-option:hover .accent-card,
+  .finish-option:hover .finish-card {
+    background: var(--control-hover);
+    border-color: var(--control-hover-line);
+  }
+  .appearance-group input:checked + span {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold);
+    background: var(--accent-wash);
+  }
+  .appearance-group input:focus-visible + span {
+    outline: 2px solid var(--gold);
+    outline-offset: 4px;
+  }
+  .appearance-selected {
+    visibility: hidden;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .appearance-group input:checked + span .appearance-selected {
+    visibility: visible;
+  }
+  .theme-card-name {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .theme-card-name .appearance-selected {
+    color: var(--gold);
+  }
+  .theme-card-description {
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .theme-preview {
+    --preview-page: var(--palette-page-dark);
+    --preview-surface: var(--palette-raised-dark);
+    --preview-accent: var(--palette-accent-dark);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    padding: 7px;
+    border-radius: 5px;
+    background: var(--preview-page);
+  }
+  :root[data-theme='light'] .theme-preview {
+    --preview-page: var(--palette-page-light);
+    --preview-surface: var(--palette-raised-light);
+    --preview-accent: var(--palette-accent-light);
+  }
+  .theme-preview > span {
+    padding: 2px 0;
+    border-radius: 3px;
+    border-top: 1px solid var(--preview-accent);
+    background: var(--preview-surface);
+    color: var(--preview-accent);
+    font-size: 18px;
+    font-weight: 600;
+    text-align: center;
+  }
+  .theme-preview > i {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: 26px;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--preview-accent);
+  }
+  .accent-options {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .accent-card {
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 10px 2px 8px;
+    text-align: center;
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--soft-text);
+  }
+  .accent-swatch {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--chosen-accent-dark);
+    color: #111318;
+  }
+  :root[data-theme='light'] .accent-swatch {
+    background: var(--chosen-accent-light);
+    color: #ffffff;
+  }
+}

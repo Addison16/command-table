@@ -117,7 +117,10 @@ test('names, commanders, optional turns and original unfinished games survive sw
   expect(resumed).toEqual(original);
   const commanderId = Object.keys(resumed.commanders)[0];
   expect(resumed.commanders[commanderId].label).toBe('Atraxa');
-  expect(resumed.damageReceived[resumed.order[0]][commanderId]).toBe(5);
+  const source = Object.values(resumed.commanders).find(
+    (commander) => commander.ownerId !== resumed.order[0],
+  )!;
+  expect(resumed.damageReceived[resumed.order[0]][source.id]).toBe(5);
   await page.getByRole('button', { name: 'Utilities', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Turn tracking', exact: true }).click();
   await page.getByRole('button', { name: 'Close A little luck & magic' }).click();

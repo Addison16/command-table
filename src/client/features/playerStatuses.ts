@@ -9,7 +9,7 @@ export type PlayerStatus = {
   warning: boolean;
 };
 
-/** Read-only summaries; damage and partner taxes never combine separate commanders. */
+/** Damage and tax shortcuts stay visible at zero; separate commanders never combine. */
 export function playerStatuses(game: Game, playerId: string): PlayerStatus[] {
   const player = game.players[playerId];
   if (!player) return [];
@@ -17,25 +17,23 @@ export function playerStatuses(game: Game, playerId: string): PlayerStatus[] {
   const commanders = Object.values(game.commanders);
   if (game.settings.commander) {
     const received = commanders
+      .filter((commander) => commander.ownerId !== playerId)
       .map((commander) => ({ commander, amount: game.damageReceived[playerId]?.[commander.id] ?? 0 }))
       .filter(({ amount }) => amount > 0);
-    if (received.length) {
-      const highest = Math.max(...received.map(({ amount }) => amount));
-      const sources = received
-        .map(
-          ({ commander, amount }) =>
-            `${game.players[commander.ownerId].name}'s ${commander.label}: ${amount}`,
-        )
-        .join('; ');
-      statuses.push({
-        kind: 'commander-damage',
-        key: 'commander-damage',
-        label: 'CMD MAX',
-        value: String(highest),
-        description: `Highest commander damage received from one commander: ${highest}. Recorded damage: ${sources}. Warning at ${game.settings.commanderThreshold} from one commander.`,
-        warning: highest >= game.settings.commanderThreshold,
-      });
-    }
+    const highest = Math.max(0, ...received.map(({ amount }) => amount));
+    const sources = received
+      .map(
+        ({ commander, amount }) => `${game.players[commander.ownerId].name}'s ${commander.label}: ${amount}`,
+      )
+      .join('; ');
+    statuses.push({
+      kind: 'commander-damage',
+      key: 'commander-damage',
+      label: 'DAMAGE',
+      value: String(highest),
+      description: `Highest commander damage received from one commander: ${highest}. ${sources ? `Recorded damage: ${sources}.` : 'No commander damage recorded.'} Warning at ${game.settings.commanderThreshold} from one commander.`,
+      warning: highest >= game.settings.commanderThreshold,
+    });
   }
   if (game.settings.poison && player.poison > 0) {
     statuses.push({
@@ -50,7 +48,6 @@ export function playerStatuses(game: Game, playerId: string): PlayerStatus[] {
   if (game.settings.commander) {
     const owned = commanders.filter((commander) => commander.ownerId === playerId);
     owned.forEach((commander, index) => {
-      if (!commander.casts) return;
       const tax = commander.casts * 2;
       statuses.push({
         kind: 'tax',

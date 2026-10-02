@@ -4,6 +4,8 @@
     inset: 0;
     z-index: 40;
     background: var(--dice-backdrop);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
   }
   .dice-screen {
     position: fixed;
@@ -34,15 +36,18 @@
   }
   .dice-screen-heading strong {
     font:
-      600 30px 'Cormorant Garamond',
+      600 34px/1 'Cormorant Garamond',
       serif;
     color: var(--dice-heading);
   }
   .dice-screen-heading .eyebrow {
-    padding: 3px 10px;
+    max-width: 100%;
+    padding: 5px 13px;
     border: 1px solid var(--accent-line);
     border-radius: 100px;
     background: var(--dice-eyebrow);
+    box-shadow: 0 4px 20px color-mix(in srgb, var(--shadow-color) 35%, transparent);
+    overflow-wrap: anywhere;
   }
   .dice-screen-heading > span:last-child {
     font-size: 12px;
@@ -60,13 +65,27 @@
     max-height: min(54%, 380px);
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 18px;
+    padding: 20px;
     background: var(--dice-gradient);
     border: 1px solid var(--accent-line-strong);
-    border-radius: 20px;
+    border-radius: 24px;
     box-shadow:
-      0 15px 65px var(--shadow-color),
-      inset 0 1px #f5dea422;
+      0 22px 70px -12px var(--shadow-color),
+      inset 0 1px color-mix(in srgb, var(--dice-value) 15%, transparent),
+      inset 0 -1px color-mix(in srgb, var(--shadow-color) 30%, transparent);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+  .dice-scorecard.revealed::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 24px;
+    right: 24px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--dice-value), transparent);
+    opacity: 0.65;
+    pointer-events: none;
   }
   .dice-scorecard > .secondary {
     background: var(--dice-secondary);
@@ -76,7 +95,7 @@
   }
   .dice-scorecard .rolled-total {
     font:
-      600 68px/0.95 'Cormorant Garamond',
+      600 76px/0.95 'Cormorant Garamond',
       serif;
     color: var(--dice-result);
     margin: 4px 0 12px;
@@ -90,15 +109,16 @@
   }
   .rolled-values .die {
     display: inline-grid;
-    min-width: 27px;
-    height: 27px;
+    min-width: 30px;
+    height: 30px;
     padding: 3px 6px;
     border: 1px solid var(--accent-line);
-    border-radius: 6px;
+    border-radius: 9px;
+    place-items: center;
     font-size: 12px;
     color: var(--dice-value);
-    background: var(--accent-wash);
-    box-shadow: none;
+    background: linear-gradient(145deg, var(--accent-wash), var(--dice-secondary));
+    box-shadow: inset 0 1px color-mix(in srgb, var(--dice-value) 12%, transparent);
   }
   .dice-scorecard .rolled-total.die {
     display: block;
@@ -116,6 +136,7 @@
     padding-left: 8px;
     padding-right: 8px;
     font-size: 12px;
+    border-radius: 12px;
   }
   .winner-name {
     font:
@@ -138,7 +159,7 @@
     justify-content: space-between;
     padding: 8px 10px;
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: 10px;
     min-width: 0;
     background: var(--control-background);
   }

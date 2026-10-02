@@ -116,8 +116,10 @@ export async function buildApp(
     },
   );
   app.post('/api/rooms', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
-    const body = z.strictObject({ game: z.unknown(), name: nameSchema }).parse(req.body);
-    return service.create(sessionHash(req), body.game, body.name);
+    const body = z
+      .strictObject({ game: z.unknown(), name: nameSchema, hostPlayerId: idSchema.optional() })
+      .parse(req.body);
+    return service.create(sessionHash(req), body.game, body.name, body.hostPlayerId);
   });
   app.post('/api/join', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req) => {
     const body = z.strictObject({ code: z.string().max(20), name: nameSchema }).parse(req.body);

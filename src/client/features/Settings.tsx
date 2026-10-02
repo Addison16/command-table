@@ -5,6 +5,7 @@ import { ask, Field, Sheet, Toggle } from '../components/ui.js';
 import { TableLayoutOptions } from './TableLayout.js';
 import { playCue, stopSounds } from '../components/feedback.js';
 import { useAppearance } from './appearance.js';
+import { AppearanceOptions } from './AppearanceOptions.js';
 export function PwaUpdates() {
   const {
     needRefresh: [update],
@@ -28,7 +29,7 @@ export function PwaUpdates() {
 }
 export function Enhancements() {
   const profile = useApp((s) => s.profile);
-  useAppearance(profile.theme);
+  useAppearance(profile);
   useEffect(() => {
     document.documentElement.dataset.effects = profile.effects;
     const hidden = () => {
@@ -85,22 +86,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
       description="Display preferences are remembered on this browser."
       onClose={onClose}
     >
-      <section className="detail-section first">
-        <Field label="Appearance">
-          <select
-            value={profile.theme}
-            onChange={(e) => void updateProfile({ theme: e.target.value as typeof profile.theme })}
-            aria-describedby="appearance-hint"
-          >
-            <option value="system">Use device setting</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </Field>
-        <p className="hint" id="appearance-hint">
-          Follow your phone’s light or dark mode, or choose your own. This only changes your display.
-        </p>
-      </section>
+      <AppearanceOptions />
       <section className="detail-section">
         <h3>Table layout</h3>
         <TableLayoutOptions />

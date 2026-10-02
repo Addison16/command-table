@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { orient, rollSpin, type Vec } from './geometry.js';
-import { roundedGeometry } from './rounded.js';
+import { dot, orient, rollSpin, type Vec } from './geometry.js';
+import { roundedGeometry, type RoundedDie } from './rounded.js';
 import { drawIvoryDie } from './ivory.js';
+import { makeDieMotion, sampleDieMotion } from './motion.js';
 
 export type VisualDie = {
   value: number;
@@ -11,11 +12,12 @@ export type VisualDie = {
   percent?: boolean;
   symbol?: boolean;
 };
-type Body = { x: number; y: number; z: number; vx: number; vy: number; vz: number; seed: number };
+type Point = [number, number];
 const smooth = (n: number) => {
   const p = Math.max(0, Math.min(1, n));
   return p * p * (3 - 2 * p);
 };
+
 export function DiceCanvas({
   dice,
   seed,
@@ -40,11 +42,11 @@ export function DiceCanvas({
       return;
     }
     const ctx = context;
-    let width = innerWidth,
-      height = innerHeight,
-      frame = 0,
-      stopped = false,
-      completed = false;
+    let width = innerWidth;
+    let height = innerHeight;
+    let frame = 0;
+    let stopped = false;
+    let completed = false;
     let hash = Array.from(seed).reduce((n, c) => Math.imul(n ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0;
     const random = () => {
       hash ^= hash << 13;
@@ -52,37 +54,37 @@ export function DiceCanvas({
       hash ^= hash << 5;
       return (hash >>> 0) / 4294967296;
     };
-    const bodies: Body[] = dice.map(() => ({
-      x: random(),
-      y: random(),
-      z: 50 + random() * 100,
-      vx: (random() > 0.5 ? 1 : -1) * (190 + random() * 210),
-      vy: 80 + random() * 190,
-      vz: 180 + random() * 180,
-      seed: random(),
-    }));
-    let initialized = false;
-    function resize() {
-      const rect = element.getBoundingClientRect();
-      width = rect.width;
-      height = rect.height;
-      const ratio = Math.min(devicePixelRatio || 1, 2);
-      element.width = Math.round(width * ratio);
-      element.height = Math.round(height * ratio);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      if (!initialized) {
-        bodies.forEach((b) => {
-          b.x = width * (0.15 + b.x * 0.7);
-          b.y = 85 + b.y * Math.max(30, height * 0.3);
-        });
-        initialized = true;
+    const bodies = dice.map((die) => {
+      const dieSeed = random();
+      return { seed: dieSeed, motion: makeDieMotion(Math.floor(dieSeed * 4294967296), die.sides === 2) };
+    });
+    const duration = Math.max(0.001, ...bodies.map((body) => body.motion.duration));
+    const meshCache = new Map<RoundedDie, { vertices: Vec[]; anchor: Point; bottom: number }>();
+    const perspective = (v: Vec): Point => {
+      const factor = 4.8 / (4.8 - v[2]);
+      return [v[0] * factor, -v[1] * factor];
+    };
+    function meshInfo(mesh: RoundedDie) {
+      let info = meshCache.get(mesh);
+      if (!info) {
+        const vertices = [
+          ...new Map(
+            mesh.surfaces.flatMap((surface) => surface.points).map((v) => [v.join(','), v]),
+          ).values(),
+        ];
+        const base = mesh.faces[0];
+        // A constant camera offset centers an asymmetric d10's result face.
+        // It does not pull the solid toward the camera during its final roll.
+        const anchor = perspective(orient(base.center, base, [0, 0, 0]));
+        const bottom = Math.max(
+          ...vertices.map((v) => perspective(orient(v, base, [0, 0, 0]))[1] - anchor[1]),
+        );
+        info = { vertices, anchor, bottom };
+        meshCache.set(mesh, info);
       }
-      if (completed) draw(1, 0);
+      return info;
     }
-    const start = performance.now(),
-      duration = 2350;
-    let previous = start;
-    function draw(progress: number, dt: number) {
+    function draw(elapsed: number) {
       ctx.clearRect(0, 0, width, height);
       const landscape = height < 500 && width > height;
       const trayWidth = landscape ? Math.max(160, width - 340) : width;
@@ -101,94 +103,93 @@ export function DiceCanvas({
         5,
         Math.min(dice.length === 1 ? 90 : 63, (trayWidth / columns) * 0.34, cellRadius),
       );
-      const settle = smooth((progress - 0.67) / 0.33);
-      if (animate && progress < 1) {
-        for (const b of bodies) {
-          b.x += b.vx * dt;
-          b.y += b.vy * dt;
-          b.vz -= 1150 * dt;
-          b.z += b.vz * dt;
-          if (b.z < 0) {
-            b.z = 0;
-            b.vz = Math.abs(b.vz) > 45 ? -b.vz * 0.58 : 0;
-          }
-          if (b.x < radius + 8 || b.x > width - radius - 8) {
-            b.x = Math.max(radius + 8, Math.min(width - radius - 8, b.x));
-            b.vx *= -0.78;
-          }
-          if (b.y < radius + 65 || b.y > height - radius - 115) {
-            b.y = Math.max(radius + 65, Math.min(height - radius - 115, b.y));
-            b.vy *= -0.72;
-          }
-          b.vx *= Math.pow(0.982, dt * 60);
-          b.vy *= Math.pow(0.987, dt * 60);
-        }
-        for (let i = 0; i < bodies.length; i++)
-          for (let j = i + 1; j < bodies.length; j++) {
-            const a = bodies[i],
-              b = bodies[j],
-              dx = b.x - a.x,
-              dy = b.y - a.y,
-              distance = Math.hypot(dx, dy);
-            if (distance > 0.01 && distance < radius * 1.7 && Math.abs(a.z - b.z) < radius) {
-              const nx = dx / distance,
-                ny = dy / distance,
-                push = (radius * 1.7 - distance) / 2;
-              a.x -= nx * push;
-              a.y -= ny * push;
-              b.x += nx * push;
-              b.y += ny * push;
-              const speed = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-              if (speed > 0) {
-                a.vx -= speed * nx;
-                a.vy -= speed * ny;
-                b.vx += speed * nx;
-                b.vy += speed * ny;
-              }
-            }
-          }
-      }
-      dice.forEach((die, index) => {
-        const body = bodies[index],
-          lastRowCount = dice.length - Math.floor(index / columns) * columns;
-        const rowColumns = Math.min(columns, lastRowCount);
+      const renders = dice.map((die, index) => {
+        const body = bodies[index];
+        const pose = sampleDieMotion(body.motion, elapsed);
+        const rowColumns = Math.min(columns, dice.length - Math.floor(index / columns) * columns);
         const targetX = trayWidth * (((index % columns) + 0.5) / rowColumns);
         const targetY = 65 + cellHeight * (Math.floor(index / columns) + 0.5);
-        const x = body.x * (1 - settle) + targetX * settle;
-        const y = body.y * (1 - settle) + targetY * settle;
-        const altitude = body.z * (1 - settle),
-          scale = radius * (1 + altitude / 800);
-        const spin = rollSpin(progress, body.seed);
-        const mesh = roundedGeometry(die.sides, scale < 24 ? 2 : 4),
-          base = mesh.faces[0];
-        const rotation = (v: Vec) => orient(v, base, spin);
-        // Kite-shaped d10 faces have an off-axis centroid. Center the result
-        // face itself as the die settles, including percentile tens/ones.
-        const anchor = rotation(base.center);
-        const anchorScale = 4.8 / (4.8 - anchor[2]);
-        const project = (v: Vec): [number, number] => {
-          const r = rotation(v),
-            perspective = 4.8 / (4.8 - r[2]);
-          return [
-            x + (r[0] * perspective - anchor[0] * anchorScale * settle) * scale,
-            y - altitude * 0.3 - (r[1] * perspective - anchor[1] * anchorScale * settle) * scale,
-          ];
+        const spin = rollSpin(1 - pose.rotation, body.seed);
+        if (die.sides === 2) {
+          spin[0] *= 1.5;
+          spin[1] *= 0.1;
+          spin[2] *= 0.24;
+        }
+        const scale = radius * (1 + pose.z * 0.025);
+        const mesh = roundedGeometry(die.sides, radius < 24 ? 2 : 4);
+        const base = mesh.faces[0];
+        const info = meshInfo(mesh);
+        // Precompute the rotation matrix once, rather than trigonometry for
+        // every point, fillet and lighting normal in each animation frame.
+        const axes = (
+          [
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+          ] as Vec[]
+        ).map((v) => orient(v, base, spin));
+        const rotationRows: Vec[] = [0, 1, 2].map((axis) => [axes[0][axis], axes[1][axis], axes[2][axis]]);
+        const rotate = (v: Vec): Vec => [
+          dot(v, rotationRows[0]),
+          dot(v, rotationRows[1]),
+          dot(v, rotationRows[2]),
+        ];
+        const projected = new Map<Vec, Point>();
+        const local = (v: Vec): Point => {
+          let point = projected.get(v);
+          if (!point) {
+            const p = perspective(rotate(v));
+            point = [p[0] - info.anchor[0], p[1] - info.anchor[1]];
+            projected.set(v, point);
+          }
+          return point;
         };
+        const support = Math.max(...info.vertices.map((v) => local(v)[1]));
+        const x = targetX + pose.x * radius;
+        const floorY = targetY + pose.y * radius + info.bottom * radius;
+        // The lowest vertex stays on the contact plane while the solid rolls.
+        // Only ballistic elevation separates the die from its fixed shadow.
+        const y = floorY - support * scale - pose.z * radius * 0.48;
+        const project = (v: Vec): Point => {
+          const p = local(v);
+          return [x + p[0] * scale, y + p[1] * scale];
+        };
+        const shadowY = floorY - info.bottom * radius * 0.55;
+        return { die, pose, x, floorY, shadowY, scale, mesh, rotate, project };
+      });
+      renders.sort((a, b) => a.floorY - b.floorY);
+      for (const { die, pose, x, floorY, shadowY, scale, mesh, rotate, project } of renders) {
         ctx.save();
-        ctx.translate(x + 5, y + scale * 0.62);
-        ctx.scale(scale * 1.02, scale * 0.34);
-        const shadow = ctx.createRadialGradient(0, 0, 0.12, 0, 0, 1);
-        shadow.addColorStop(0, `rgba(0,0,0,${0.48 - Math.min(0.25, altitude / 650)})`);
-        shadow.addColorStop(0.48, 'rgba(0,0,0,.18)');
-        shadow.addColorStop(1, 'rgba(0,0,0,0)');
+        // The camera sees the result face from above. Its table shadow extends
+        // beneath the solid, rather than suggesting a die balanced on a tip.
+        ctx.translate(x + radius * (0.06 + pose.z * 0.04), shadowY);
+        ctx.scale(radius * (0.9 + pose.z * 0.16), radius * (0.62 + pose.z * 0.075));
+        const shadow = ctx.createRadialGradient(0, 0, 0.05, 0, 0, 1);
+        shadow.addColorStop(0, `rgba(0,2,6,${0.46 / (1 + pose.z * 0.9)})`);
+        shadow.addColorStop(0.5, `rgba(0,2,6,${0.14 / (1 + pose.z)})`);
+        shadow.addColorStop(1, 'rgba(0,2,6,0)');
         ctx.fillStyle = shadow;
         ctx.beginPath();
         ctx.arc(0, 0, 1, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
-        drawIvoryDie(ctx, mesh, project, rotation, die, scale);
+        if (pose.grounded) {
+          ctx.save();
+          ctx.translate(x, shadowY);
+          ctx.scale(radius * 0.65, radius * 0.42);
+          const contact = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+          contact.addColorStop(0, 'rgba(0,1,4,.4)');
+          contact.addColorStop(1, 'rgba(0,1,4,0)');
+          ctx.fillStyle = contact;
+          ctx.beginPath();
+          ctx.arc(0, 0, 1, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        drawIvoryDie(ctx, mesh, project, rotate, die, scale);
         if (die.name && showNames) {
           ctx.save();
+          ctx.globalAlpha = smooth((0.1 - pose.rotation) / 0.1);
           ctx.font = `600 ${labelHeight === 18 ? 10 : 12}px Inter, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -196,23 +197,35 @@ export function DiceCanvas({
           const labelWidth = Math.min(trayWidth / columns - 12, ctx.measureText(label).width + 20);
           ctx.fillStyle = 'rgba(8,12,20,.9)';
           ctx.beginPath();
-          ctx.roundRect(x - labelWidth / 2, y + scale + 7, labelWidth, labelHeight, 8);
+          ctx.roundRect(x - labelWidth / 2, floorY + 7, labelWidth, labelHeight, 8);
           ctx.fill();
+          ctx.strokeStyle = 'rgba(241,218,165,.3)';
+          ctx.lineWidth = 0.7;
+          ctx.stroke();
           ctx.fillStyle = '#f8ebd0';
-          ctx.fillText(label, x, y + scale + 7 + labelHeight / 2, labelWidth - 10);
+          ctx.fillText(label, x, floorY + 7 + labelHeight / 2, labelWidth - 10);
           ctx.restore();
         }
-      });
+      }
     }
+    function resize() {
+      const rect = element.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+      const ratio = Math.min(devicePixelRatio || 1, 2);
+      element.width = Math.round(width * ratio);
+      element.height = Math.round(height * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      if (completed) draw(duration);
+    }
+    const start = performance.now();
     function tick(now: number) {
       if (stopped) return;
-      const progress = animate ? Math.min(1, (now - start) / duration) : 1;
-      const dt = Math.min(0.032, (now - previous) / 1000);
-      previous = now;
-      if (!document.hidden) draw(progress, dt);
-      if (progress < 1) frame = requestAnimationFrame(tick);
+      const elapsed = animate ? Math.min(duration, (now - start) / 1000) : duration;
+      if (!document.hidden) draw(elapsed);
+      if (elapsed < duration) frame = requestAnimationFrame(tick);
       else {
-        draw(1, 0);
+        draw(duration);
         completed = true;
         finish.current();
       }

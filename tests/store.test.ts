@@ -118,6 +118,58 @@ function expectLocal(game: Game) {
   });
 }
 
+describe('shared-room seat controls', () => {
+  it('allows only the assigned seat for hosts and guests, even with an old everyone-edits setting', async () => {
+    const { room } = await connectedRoom();
+    store.useApp.setState({ readOnly: false, pending: 0 });
+    expect(store.canEdit(room.me.seatId!)).toBe(true);
+    expect(store.canEdit(room.game!.order[1])).toBe(false);
+    store.useApp.setState({ room: { ...room, everyoneEdits: true, hostId: newId() } });
+    expect(store.canEdit(room.me.seatId!)).toBe(true);
+    expect(store.canEdit(room.game!.order[1])).toBe(false);
+    store.useApp.setState({ connected: false });
+    expect(store.canEdit(room.me.seatId!)).toBe(false);
+  });
+
+  it('keeps cross-seat player saves and group effects from being submitted', async () => {
+    const { room } = await connectedRoom();
+    const save = vi.fn(async () => true);
+    store.registerRoom(
+      vi.fn(async () => {}),
+      vi.fn(),
+      save,
+    );
+    store.useApp.setState({ readOnly: false, pending: 0 });
+    expect(
+      await store.savePlayer({
+        type: 'editPlayer',
+        playerId: room.game!.order[1],
+        name: 'Someone else',
+        color: 'teal',
+        commanders: [],
+      }),
+    ).toBe(false);
+    expect(
+      await store.saveGroupLife(
+        {
+          type: 'groupLife',
+          casterId: room.me.seatId!,
+          targetIds: [room.game!.order[1]],
+          loss: 3,
+        },
+        {
+          gameId: room.gameId,
+          revision: room.game!.revision,
+          mode: 'room',
+          roomId: room.id,
+          roomRevision: room.revision,
+        },
+      ),
+    ).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+
 describe('reviewed group life changes', () => {
   async function effect() {
     await store.startLocal(defaultSetup(4));
@@ -252,6 +304,7 @@ describe('local game transitions and recovery', () => {
 
   it('does not report a room player save as successful without an acknowledgement sender', async () => {
     const { room, send } = await connectedRoom();
+    store.useApp.setState({ readOnly: false });
     const playerId = room.game!.order[0];
     const command: Extract<Command, { type: 'editPlayer' }> = {
       type: 'editPlayer',

@@ -32,6 +32,15 @@
   .status-chip[data-status='tax'] {
     --status-ink: var(--status-tax);
   }
+  button.status-chip {
+    min-height: 44px;
+    border-radius: 9px;
+    touch-action: manipulation;
+  }
+  button.status-chip:hover {
+    border-color: var(--status-ink);
+    background: color-mix(in srgb, var(--status-ink) 12%, var(--surface));
+  }
   .status-chip.is-warning {
     --status-ink: var(--status-warning);
     border-color: var(--status-warning-line);
@@ -88,12 +97,27 @@
     }
   }
   @media (orientation: landscape) {
+    .shared-table .tile-content:has(.player-statuses) {
+      padding-top: 2px;
+      padding-bottom: 2px;
+    }
+    .shared-table .tile-content:has(.player-statuses) .player-heading {
+      min-height: 32px;
+      padding-top: 2px;
+      padding-bottom: 2px;
+    }
+    .shared-table .tile-content:has(.player-statuses) :is(.digits-1, .digits-2) .life-total {
+      font-size: 48px;
+    }
     .shared-table .player-statuses {
       padding-top: 2px;
     }
     .shared-table .status-chip {
       min-height: 22px;
       padding: 2px 6px;
+    }
+    .shared-table button.status-chip {
+      min-height: 44px;
     }
   }
   @media (orientation: landscape) and (max-height: 350px) {
@@ -102,7 +126,16 @@
       padding-bottom: 0;
     }
     .shared-table .tile-content:has(.player-statuses) .life-controls .hold {
-      min-height: 44px;
+      min-height: 52px;
+    }
+    .shared-table .tile-content:has(.player-statuses) .player-heading {
+      min-height: 24px;
+      padding-top: 1px;
+      padding-bottom: 1px;
+    }
+    .shared-table .tile-content:has(.player-statuses) .player-heading .seat-index {
+      width: 18px;
+      height: 18px;
     }
     .shared-table .tile-content:has(.player-statuses) :is(.digits-1, .digits-2) .life-total {
       font-size: 38px;
@@ -115,6 +148,9 @@
       min-height: 18px;
       gap: 3px;
       padding: 2px 4px;
+    }
+    .shared-table button.status-chip {
+      min-height: 28px;
     }
     .shared-table .status-chip-label {
       letter-spacing: 0.15px;

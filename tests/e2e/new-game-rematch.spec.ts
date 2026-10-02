@@ -65,24 +65,32 @@ async function customSetup(page: Page) {
   await page.getByLabel('Commander damage warning threshold', { exact: true }).fill('25');
 }
 
-async function expectFreshSetup(page: Page) {
+async function expectFreshSetup(page: Page, mode: 'One phone' | 'Multiple phones') {
   await expect(page.getByRole('button', { name: '4', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('combobox', { name: 'Game preset', exact: true })).toHaveValue('Commander');
   await expect(page.getByLabel('Starting life', { exact: true })).toHaveValue('40');
-  await page.getByText('Names, colors & commanders', { exact: false }).click();
   const seats = page.locator('.seat-form');
-  await expect(seats).toHaveCount(4);
-  for (const [index, color] of ['ivory', 'blue', 'violet', 'ember'].entries()) {
-    await expect(seats.nth(index).getByLabel(`Seat ${index + 1} name`, { exact: true })).toHaveValue(
-      `Player ${index + 1}`,
-    );
-    await expect(seats.nth(index).getByRole('combobox', { name: 'Color', exact: true })).toHaveValue(color);
-    await expect(seats.nth(index).getByRole('combobox', { name: 'Commanders', exact: true })).toHaveValue(
-      '1',
-    );
-    await expect(seats.nth(index).getByLabel('Commander 1', { exact: true })).toHaveValue('Commander 1');
+  if (mode === 'Multiple phones') {
+    await expect(page.getByRole('group', { name: 'Your player', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Your display name')).toHaveValue('');
+    await expect(page.getByLabel('Commander 1 name', { exact: true })).toHaveValue('');
+    await expect(
+      page.getByRole('checkbox', { name: 'Two commanders / partners', exact: true }),
+    ).not.toBeChecked();
+    await expect(seats).toHaveCount(0);
+  } else {
+    await page.getByText('Names, colors & commanders', { exact: false }).click();
+    await expect(seats).toHaveCount(4);
+    for (const [index, color] of ['ivory', 'blue', 'violet', 'ember'].entries()) {
+      await expect(seats.nth(index).getByLabel(`Seat ${index + 1} name`, { exact: true })).toHaveValue('');
+      await expect(seats.nth(index).getByRole('combobox', { name: 'Color', exact: true })).toHaveValue(color);
+      await expect(seats.nth(index).getByRole('combobox', { name: 'Commanders', exact: true })).toHaveValue(
+        '1',
+      );
+      await expect(seats.nth(index).getByLabel('Commander 1', { exact: true })).toHaveValue('');
+    }
   }
-  await expect(seats.getByRole('img')).toHaveCount(0);
+  await expect(page.getByRole('dialog').getByRole('img')).toHaveCount(0);
   await page.getByText('Trackers & house rules', { exact: false }).click();
   await expect(page.getByRole('checkbox', { name: 'Poison tracker', exact: true })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Commander tools', exact: true })).toBeChecked();
@@ -134,7 +142,7 @@ for (const mode of ['One phone', 'Multiple phones'] as const) {
     await page.getByRole('button', { name: 'Game menu', exact: true }).click();
     await page.getByRole('button', { name: 'New game · change setup', exact: true }).click();
     await page.getByRole('button', { name: new RegExp(mode) }).click();
-    await expectFreshSetup(page);
+    await expectFreshSetup(page, mode);
     const created =
       mode === 'Multiple phones'
         ? page.waitForResponse(
@@ -152,7 +160,7 @@ for (const mode of ['One phone', 'Multiple phones'] as const) {
     expect(fresh.id).not.toBe(original.id);
     expect(fresh.order).toHaveLength(4);
     expect(fresh.order.map((id) => fresh.players[id].name)).toEqual([
-      'Player 1',
+      mode === 'Multiple phones' ? 'Host' : 'Player 1',
       'Player 2',
       'Player 3',
       'Player 4',
@@ -174,7 +182,7 @@ for (const mode of ['One phone', 'Multiple phones'] as const) {
     await page
       .getByRole('button', { name: mode === 'One phone' ? 'Set up a game' : 'Create room', exact: true })
       .click();
-    await expectFreshSetup(page);
+    await expectFreshSetup(page, mode);
   });
 }
 
@@ -298,7 +306,7 @@ test('a host can rematch from the ending prompt without losing guest seats or ed
     await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
     await guest.getByRole('button', { name: "Decrease Rowan's life", exact: true }).click();
-    await host.getByRole('button', { name: "Decrease Player 2's life", exact: true }).click();
+    await host.getByRole('button', { name: "Decrease Host's life", exact: true }).click();
     await expect(host.getByTestId('life-0')).toHaveText('29');
     await expect(guest.getByTestId('life-1')).toHaveText('29');
     await guest.getByRole('button', { name: 'Game menu', exact: true }).click();
@@ -320,7 +328,8 @@ test('a host can rematch from the ending prompt without losing guest seats or ed
     expect(after.game!.commanders).toEqual(before.game!.commanders);
     expectReset(after.game!, 30);
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
-    await expect(guest.getByRole('button', { name: "Decrease Player 2's life", exact: true })).toBeDisabled();
+    await expect(guest.getByRole('button', { name: "Decrease Host's life", exact: true })).toBeDisabled();
+    await expect(host.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeDisabled();
     await guest.getByRole('button', { name: 'Rowan details', exact: true }).click();
     await guest.getByText('Edit player & commanders', { exact: true }).click();
     await expect(guest.getByLabel('Commander 1 name', { exact: true })).toHaveValue('Tymna the Weaver');
@@ -330,7 +339,7 @@ test('a host can rematch from the ending prompt without losing guest seats or ed
     await guest.getByRole('button', { name: 'Close Rowan rematch', exact: true }).click();
     await expect(host.getByRole('button', { name: 'Rowan rematch details', exact: true })).toBeVisible();
     await guest.getByRole('button', { name: "Decrease Rowan rematch's life", exact: true }).click();
-    await expect(host.getByTestId('life-0')).toHaveText('29');
+    await expect(host.getByTestId('life-1')).toHaveText('29');
   } finally {
     await guestContext.close();
   }
@@ -357,7 +366,7 @@ test('a stale rematch confirmation cannot reset the replacement game from anothe
     await expect(stale).toBeVisible();
     const prompt = await endPrompt(second);
     await prompt.getByRole('button', { name: 'Rematch', exact: true }).click();
-    await second.getByRole('button', { name: "Decrease Player 1's life", exact: true }).click();
+    await second.getByRole('button', { name: "Decrease Host's life", exact: true }).click();
     await expect(host.getByTestId('life-0')).toHaveText('39');
     const before = (await (await second.request.get(`/api/rooms/${room.id}`)).json()) as RoomView;
     expect(before.gameId).not.toBe(room.gameId);

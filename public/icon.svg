@@ -1,16 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#090d14" />
-  <!-- The homepage Sigil's default geometry, centered inside the maskable safe area. -->
-  <g transform="translate(14 14)" fill="none">
-    <g stroke="#d6b66a" stroke-width="1.2">
-      <circle cx="50" cy="50" r="38" stroke-dasharray="2 7" />
-      <path d="m50 8 36 21v42L50 92 14 71V29Z" />
-      <g>
-        <path d="m50 19 22 31-22 31-22-31Z M19 50h62M50 19v62" />
-        <circle cx="50" cy="50" r="15" />
-        <path d="m35 35 30 30M65 35 35 65" />
-      </g>
-    </g>
-    <circle cx="50" cy="50" r="4" fill="#d6b66a" />
+  <rect width="128" height="128" fill="#090d14"/>
+  <g id="emblem-art" stroke-linecap="round" stroke-linejoin="round">
+    <path id="mana-orbit" d="M101 64A37 37 0 1 0 27 64A37 37 0 1 0 101 64Z" fill="none" stroke="#d9b96f" stroke-width="1.8" opacity="0.4"/>
+    <path id="sun-plate" d="M76 27A12 12 0 1 0 52 27A12 12 0 1 0 76 27Z" fill="#2b2b24"/>
+    <path id="sun-rim" d="M76 27A12 12 0 1 0 52 27A12 12 0 1 0 76 27Z" fill="none" stroke="#c8b582" stroke-width="1.7"/>
+    <path id="sun-glyph" d="M68.7 27A4.7 4.7 0 1 0 59.3 27A4.7 4.7 0 1 0 68.7 27ZM69.9 26L73 27L69.9 28ZM68.879 30.465L70.364 33.364L67.465 31.879ZM65 32.9L64 36L63 32.9ZM60.535 31.879L57.636 33.364L59.121 30.465ZM58.1 28L55 27L58.1 26ZM59.121 23.535L57.636 20.636L60.535 22.121ZM63 21.1L64 18L65 21.1ZM67.465 22.121L70.364 20.636L68.879 23.535Z" fill="#f1dfa8" fill-rule="evenodd"/>
+    <path id="water-plate" d="M111.19 52.57A12 12 0 1 0 87.19 52.57A12 12 0 1 0 111.19 52.57Z" fill="#182c3c"/>
+    <path id="water-rim" d="M111.19 52.57A12 12 0 1 0 87.19 52.57A12 12 0 1 0 111.19 52.57Z" fill="none" stroke="#6ca5c1" stroke-width="1.7"/>
+    <path id="water-glyph" d="M99.19 43.57C96.69 47.27 92.69 51.27 92.69 55.17C92.69 62.77 105.69 62.77 105.69 55.17C105.69 51.27 101.69 47.27 99.19 43.57Z" fill="#86c7e8" fill-rule="evenodd"/>
+    <path id="skull-plate" d="M97.75 93.93A12 12 0 1 0 73.75 93.93A12 12 0 1 0 97.75 93.93Z" fill="#292634"/>
+    <path id="skull-rim" d="M97.75 93.93A12 12 0 1 0 73.75 93.93A12 12 0 1 0 97.75 93.93Z" fill="none" stroke="#9a91b0" stroke-width="1.7"/>
+    <path id="skull-glyph" d="M78.75 92.93C78.75 83.93 92.75 83.93 92.75 92.93C92.75 95.73 91.15 97.53 89.55 98.03L89.55 100.93H81.95V98.03C80.35 97.53 78.75 95.73 78.75 92.93ZM84.65 93.13A1.7 1.7 0 1 0 81.25 93.13A1.7 1.7 0 1 0 84.65 93.13ZM90.25 93.13A1.7 1.7 0 1 0 86.85 93.13A1.7 1.7 0 1 0 90.25 93.13ZM85.75 95.43L84.25 97.63L87.25 97.63Z" fill="#c6bfd8" fill-rule="evenodd"/>
+    <path id="flame-plate" d="M54.25 93.93A12 12 0 1 0 30.25 93.93A12 12 0 1 0 54.25 93.93Z" fill="#37241f"/>
+    <path id="flame-rim" d="M54.25 93.93A12 12 0 1 0 30.25 93.93A12 12 0 1 0 54.25 93.93Z" fill="none" stroke="#c48765" stroke-width="1.7"/>
+    <path id="flame-glyph" d="M35.55 96.13C35.55 92.33 39.35 89.73 38.75 86.83C41.95 88.13 43.05 90.03 42.55 92.33C46.35 90.23 45.55 87.23 44.35 84.93C49.35 87.93 49.25 93.73 48.65 96.83C47.55 103.43 35.55 103.33 35.55 96.13Z" fill="#ef9875" fill-rule="evenodd"/>
+    <path id="tree-plate" d="M40.81 52.57A12 12 0 1 0 16.81 52.57A12 12 0 1 0 40.81 52.57Z" fill="#20332a"/>
+    <path id="tree-rim" d="M40.81 52.57A12 12 0 1 0 16.81 52.57A12 12 0 1 0 40.81 52.57Z" fill="none" stroke="#79a28a" stroke-width="1.7"/>
+    <path id="tree-glyph" d="M28.81 43.57L23.41 49.57L26.01 49.57L21.71 54.57L24.91 54.57L20.71 58.57L27.21 58.57L27.21 61.57L30.41 61.57L30.41 58.57L36.91 58.57L32.71 54.57L35.91 54.57L31.61 49.57L34.21 49.57Z" fill="#9ac9a4" fill-rule="evenodd"/>
+    <path id="commander-card" d="M53 43H75A6 6 0 0 1 81 49V81A6 6 0 0 1 75 87H53A6 6 0 0 1 47 81V49A6 6 0 0 1 53 43Z" fill="#17202b"/>
+    <path id="commander-rim" d="M53 43H75A6 6 0 0 1 81 49V81A6 6 0 0 1 75 87H53A6 6 0 0 1 47 81V49A6 6 0 0 1 53 43ZM54 47H74A3 3 0 0 1 77 50V80A3 3 0 0 1 74 83H54A3 3 0 0 1 51 80V50A3 3 0 0 1 54 47Z" fill="#d9b96f" fill-rule="evenodd"/>
+    <path id="commander-highlight" d="M53 43H75A6 6 0 0 1 81 49M47 69V49A6 6 0 0 1 53 43" fill="none" stroke="#f5deb0" stroke-width="1.3" opacity="0.75"/>
+    <path id="commander-crown" d="M53 56L58 61L64 52L70 61L75 56L73 70H55Z M64 60L66.1 63L64 66L61.9 63Z" fill="#f5deb0" fill-rule="evenodd"/>
+    <path id="commander-band" d="M55 72H73V74H55Z" fill="#d9b96f"/>
+    <path id="commander-text" d="M56 78H72" fill="none" stroke="#d9b96f" stroke-width="1.8" opacity="0.8"/>
   </g>
 </svg>

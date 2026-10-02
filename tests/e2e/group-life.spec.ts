@@ -206,7 +206,7 @@ test('a failed durable write preserves every total and locks direct retry until 
   expect(errors).toEqual([]);
 });
 
-test('only the room host can apply an effect and all approved devices receive the same protected totals', async ({
+test('room players and hosts cannot apply group effects to other players’ totals', async ({
   page: host,
   browser,
 }) => {
@@ -223,85 +223,15 @@ test('only the room host can apply an effect and all approved devices receive th
     await host.getByRole('button', { name: 'Approve seat', exact: true }).click();
     await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
-    await guest.getByRole('button', { name: 'Utilities', exact: true }).click();
-    await expect(guest.getByRole('button', { name: 'Group life change', exact: true })).toBeDisabled();
-    await expect(
-      guest.getByText('The host applies group effects for the table.', { exact: true }),
-    ).toBeVisible();
-    await guest.getByRole('button', { name: 'Close A little luck & magic', exact: true }).click();
     const before = await roomGame(host, room.id);
-    await openGroupLife(host);
-    await host.getByRole('combobox', { name: 'Caster', exact: true }).selectOption({ label: 'Rowan' });
-    await host.getByRole('spinbutton', { name: 'Life lost per selected opponent', exact: true }).fill('3');
-    await host.getByRole('checkbox', { name: 'Caster gains life', exact: true }).check();
-    await host.getByRole('spinbutton', { name: /^Total life gained by caster/ }).fill('5');
-    await host.getByRole('button', { name: 'Apply to 3 opponents', exact: true }).click();
-    await expect(host.getByRole('dialog')).toHaveCount(0);
     for (const device of [host, guest]) {
-      await expect(device.getByTestId('life-0')).toHaveText('45');
-      for (const index of [1, 2, 3]) await expect(device.getByTestId(`life-${index}`)).toHaveText('37');
+      await device.getByRole('button', { name: 'Utilities', exact: true }).click();
+      await expect(device.getByRole('button', { name: 'Group life change', exact: true })).toBeDisabled();
+      await device.getByRole('button', { name: 'Close A little luck & magic', exact: true }).click();
+      for (const index of [0, 1, 2, 3]) await expect(device.getByTestId(`life-${index}`)).toHaveText('40');
     }
-    const changed = await roomGame(host, room.id);
-    expect(changed.history).toHaveLength(before.history.length + 1);
-    expect(changed.commanders).toEqual(before.commanders);
-    expect(changed.damageReceived).toEqual(before.damageReceived);
-    await host.getByRole('button', { name: 'Undo', exact: true }).click();
-    await expect(guest.getByTestId('life-0')).toHaveText('40');
-    await expect(guest.getByTestId('life-1')).toHaveText('40');
-    expect((await roomGame(host, room.id)).players).toEqual(before.players);
+    expect(await roomGame(host, room.id)).toEqual(before);
   } finally {
     await guestContext.close();
   }
-});
-
-test('a lost acknowledgement reconciles the original effect once and does not enable a duplicate retry', async ({
-  page,
-}) => {
-  let lostOperation = '';
-  let lostAcknowledgement = false;
-  await page.routeWebSocket('**/api/rooms/**/live?*', (route) => {
-    const server = route.connectToServer();
-    let hiddenOperation = '';
-    route.onMessage((raw) => {
-      const message = JSON.parse(String(raw));
-      if (!lostOperation && message.type === 'command' && message.envelope.command.type === 'groupLife') {
-        lostOperation = hiddenOperation = message.envelope.operationId;
-      }
-      server.send(raw);
-    });
-    server.onMessage((raw) => {
-      const message = JSON.parse(String(raw));
-      if (hiddenOperation && ['ack', 'state'].includes(message.type)) {
-        if (message.receipt?.operationId === hiddenOperation) {
-          lostAcknowledgement = true;
-          void route.close({ code: 1012, reason: 'Test disconnect after durable server commit' });
-          void server.close();
-        }
-        return;
-      }
-      route.send(raw);
-    });
-  });
-  const room = await createRoom(page);
-  await openGroupLife(page);
-  await page.getByRole('combobox', { name: 'Caster', exact: true }).selectOption({ label: 'Player 1' });
-  await page.getByRole('spinbutton', { name: 'Life lost per selected opponent', exact: true }).fill('4');
-  const apply = page.getByRole('button', { name: 'Apply to 3 opponents', exact: true });
-  await apply.click();
-  await expect.poll(() => lostAcknowledgement).toBe(true);
-  await expect(page.getByRole('dialog').getByRole('status')).toContainText('not confirmed');
-  await expect(apply).toBeDisabled();
-  const review = page.getByRole('button', { name: 'Clear and review a new effect', exact: true });
-  await expect(review).toBeEnabled({ timeout: 15000 });
-  const changed = await roomGame(page, room.id);
-  expect(changed.players[changed.order[0]].life).toBe(40);
-  expect(changed.order.slice(1).map((id) => changed.players[id].life)).toEqual([36, 36, 36]);
-  expect(changed.history.filter((entry) => entry.operationId === lostOperation)).toHaveLength(1);
-  expect(changed.history).toHaveLength(1);
-  await expect(page.locator('.group-life-preview')).toContainText('36 → 32');
-  await expect(apply).toBeDisabled();
-  await review.click();
-  await expect(page.getByRole('combobox', { name: 'Caster', exact: true })).toHaveValue('');
-  await expect(page.getByRole('button', { name: /^Apply to/ })).toBeDisabled();
-  expect(await roomGame(page, room.id)).toEqual(changed);
 });

@@ -4,10 +4,18 @@ import { palettes, setupSchema, type Setup } from '../../shared/schema.js';
 import { useApp, report, startLocal, updateProfile } from '../app/store.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { CommanderInput } from '../components/CommanderInput.js';
+import { PlayerNameInput } from '../components/PlayerNameInput.js';
 export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose: () => void }) {
-  const [setup, setSetup] = useState<Setup>(() => defaultSetup());
+  const [setup, setSetup] = useState<Setup>(() => {
+    const initial = defaultSetup();
+    if (mode === 'room') initial.seats[0].commanders = [''];
+    return initial;
+  });
   const [busy, setBusy] = useState(false);
-  const [displayName, setDisplayName] = useState(useApp.getState().profile.displayName || 'Host');
+  const [displayName, setDisplayName] = useState(() => {
+    const saved = useApp.getState().profile.displayName;
+    return /^(?:Host|Player(?: [1-8])?)$/.test(saved) ? '' : saved;
+  });
   const settings = setup.settings;
   const change = (patch: Partial<Setup['settings']>) =>
     setSetup((s) => ({ ...s, settings: { ...s.settings, ...patch } }));
@@ -26,13 +34,21 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
   const submit = async () => {
     setBusy(true);
     try {
-      const data = setupSchema.parse(setup);
+      const hostName = displayName.trim() || 'Host';
+      const data = setupSchema.parse({
+        ...setup,
+        seats: setup.seats.map((seat, index) => ({
+          ...seat,
+          name: mode === 'room' && index === 0 ? hostName : seat.name.trim() || `Player ${index + 1}`,
+          commanders: seat.commanders.map((name, index) => name.trim() || `Commander ${index + 1}`),
+        })),
+      });
       if (mode === 'local') await startLocal(data);
       else {
         const { createRoom } = await import('../adapters/room.js');
-        await createRoom(data, displayName);
+        await createRoom(data, hostName);
       }
-      await updateProfile({ setup: data, displayName });
+      await updateProfile({ setup: data, ...(mode === 'room' ? { displayName: hostName } : {}) });
       onClose();
     } catch (e) {
       report(e);
@@ -46,7 +62,7 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
       description={
         mode === 'local'
           ? 'One device. Everyone around the table.'
-          : 'Choose the table size. Friends set their own names and commanders when they join.'
+          : 'Choose the table size and set up your player. Friends choose their own names and commanders when they join.'
       }
       onClose={onClose}
     >
@@ -94,119 +110,173 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
           />
         </Field>
         {mode === 'room' && (
-          <Field label="Your display name">
-            <input
-              required
-              maxLength={40}
-              autoComplete="nickname"
+          <fieldset className="lobby-profile" disabled={busy}>
+            <legend>Your player</legend>
+            <PlayerNameInput
+              label="Your display name"
+              hint="This will be your player name at the table. Leave blank to use Host."
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              defaultName="Host"
+              onChange={setDisplayName}
+              disabled={busy}
             />
-          </Field>
-        )}
-        <details>
-          <summary>
-            Names, colors & commanders <span>Optional</span>
-          </summary>
-          <div className="seat-forms">
-            {setup.seats.map((seat, i) => (
-              <div className="seat-form" key={i}>
-                <span className={`palette-dot ${seat.color}`} />
-                <Field label={`Seat ${i + 1} name`}>
-                  <input
-                    value={seat.name}
-                    maxLength={40}
-                    required
-                    onChange={(e) =>
-                      setSetup((s) => ({
-                        ...s,
-                        seats: s.seats.map((p, j) => (j === i ? { ...p, name: e.target.value } : p)),
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Color">
-                  <select
-                    value={seat.color}
-                    onChange={(e) =>
-                      setSetup((s) => ({
-                        ...s,
-                        seats: s.seats.map((p, j) =>
-                          j === i ? { ...p, color: e.target.value as typeof seat.color } : p,
+            {settings.commander && (
+              <>
+                {setup.seats[0].commanders.map((label, index) => (
+                  <CommanderInput
+                    key={index}
+                    label={`Commander ${index + 1} name`}
+                    value={label}
+                    card={setup.seats[0].commanderCards?.[index]}
+                    disabled={busy}
+                    onChange={(name, card) =>
+                      setSetup((current) => ({
+                        ...current,
+                        seats: current.seats.map((seat, seatIndex) =>
+                          seatIndex === 0
+                            ? {
+                                ...seat,
+                                commanders: seat.commanders.map((value, at) => (at === index ? name : value)),
+                                commanderCards: seat.commanders.map((_, at) =>
+                                  at === index ? card : (seat.commanderCards?.[at] ?? null),
+                                ),
+                              }
+                            : seat,
                         ),
                       }))
                     }
-                  >
-                    {palettes.map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </select>
-                </Field>
-                {settings.commander && (
-                  <>
-                    <Field label="Commanders">
-                      <select
-                        value={seat.commanders.length}
-                        onChange={(e) =>
-                          setSetup((s) => ({
-                            ...s,
-                            seats: s.seats.map((p, j) =>
-                              j === i
-                                ? {
-                                    ...p,
-                                    commanders:
-                                      Number(e.target.value) === 2
-                                        ? [p.commanders[0], 'Commander 2']
-                                        : [p.commanders[0]],
-                                    ...(p.commanderCards
-                                      ? {
-                                          commanderCards:
-                                            Number(e.target.value) === 2
-                                              ? [p.commanderCards[0] ?? null, null]
-                                              : [p.commanderCards[0] ?? null],
-                                        }
-                                      : {}),
-                                  }
-                                : p,
-                            ),
-                          }))
-                        }
-                      >
-                        <option value="1">One commander</option>
-                        <option value="2">Two commanders / partners</option>
-                      </select>
-                    </Field>
-                    {seat.commanders.map((label, k) => (
-                      <CommanderInput
-                        key={k}
-                        label={`Commander ${k + 1}`}
-                        value={label}
-                        card={seat.commanderCards?.[k]}
-                        disabled={busy}
-                        onChange={(name, card) =>
-                          setSetup((s) => ({
-                            ...s,
-                            seats: s.seats.map((p, j) =>
-                              j === i
-                                ? {
-                                    ...p,
-                                    commanders: p.commanders.map((n, nI) => (nI === k ? name : n)),
-                                    commanderCards: p.commanders.map((_, nI) =>
-                                      nI === k ? card : (p.commanderCards?.[nI] ?? null),
-                                    ),
-                                  }
-                                : p,
-                            ),
-                          }))
-                        }
-                      />
-                    ))}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        </details>
+                  />
+                ))}
+                <Toggle
+                  checked={setup.seats[0].commanders.length === 2}
+                  onChange={(partners) =>
+                    setSetup((current) => ({
+                      ...current,
+                      seats: current.seats.map((seat, index) =>
+                        index === 0
+                          ? {
+                              ...seat,
+                              commanders: partners ? [seat.commanders[0], ''] : [seat.commanders[0]],
+                              commanderCards: partners
+                                ? [seat.commanderCards?.[0] ?? null, null]
+                                : [seat.commanderCards?.[0] ?? null],
+                            }
+                          : seat,
+                      ),
+                    }))
+                  }
+                >
+                  Two commanders / partners
+                </Toggle>
+              </>
+            )}
+            <p className="hint">The first seat is yours. You can edit your player during the game.</p>
+          </fieldset>
+        )}
+        {mode === 'local' && (
+          <details>
+            <summary>
+              Names, colors & commanders <span>Optional</span>
+            </summary>
+            <div className="seat-forms">
+              {setup.seats.map((seat, i) => (
+                <div className="seat-form" key={i}>
+                  <span className={`palette-dot ${seat.color}`} />
+                  <PlayerNameInput
+                    label={`Seat ${i + 1} name`}
+                    value={seat.name}
+                    defaultName={`Player ${i + 1}`}
+                    disabled={busy}
+                    onChange={(name) =>
+                      setSetup((s) => ({
+                        ...s,
+                        seats: s.seats.map((p, j) => (j === i ? { ...p, name } : p)),
+                      }))
+                    }
+                  />
+                  <Field label="Color">
+                    <select
+                      value={seat.color}
+                      onChange={(e) =>
+                        setSetup((s) => ({
+                          ...s,
+                          seats: s.seats.map((p, j) =>
+                            j === i ? { ...p, color: e.target.value as typeof seat.color } : p,
+                          ),
+                        }))
+                      }
+                    >
+                      {palettes.map((c) => (
+                        <option key={c}>{c}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  {settings.commander && (
+                    <>
+                      <Field label="Commanders">
+                        <select
+                          value={seat.commanders.length}
+                          onChange={(e) =>
+                            setSetup((s) => ({
+                              ...s,
+                              seats: s.seats.map((p, j) =>
+                                j === i
+                                  ? {
+                                      ...p,
+                                      commanders:
+                                        Number(e.target.value) === 2
+                                          ? [p.commanders[0], 'Commander 2']
+                                          : [p.commanders[0]],
+                                      ...(p.commanderCards
+                                        ? {
+                                            commanderCards:
+                                              Number(e.target.value) === 2
+                                                ? [p.commanderCards[0] ?? null, null]
+                                                : [p.commanderCards[0] ?? null],
+                                          }
+                                        : {}),
+                                    }
+                                  : p,
+                              ),
+                            }))
+                          }
+                        >
+                          <option value="1">One commander</option>
+                          <option value="2">Two commanders / partners</option>
+                        </select>
+                      </Field>
+                      {seat.commanders.map((label, k) => (
+                        <CommanderInput
+                          key={k}
+                          label={`Commander ${k + 1}`}
+                          value={label}
+                          card={seat.commanderCards?.[k]}
+                          disabled={busy}
+                          onChange={(name, card) =>
+                            setSetup((s) => ({
+                              ...s,
+                              seats: s.seats.map((p, j) =>
+                                j === i
+                                  ? {
+                                      ...p,
+                                      commanders: p.commanders.map((n, nI) => (nI === k ? name : n)),
+                                      commanderCards: p.commanders.map((_, nI) =>
+                                        nI === k ? card : (p.commanderCards?.[nI] ?? null),
+                                      ),
+                                    }
+                                  : p,
+                              ),
+                            }))
+                          }
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
         <details>
           <summary>
             Trackers & house rules <span>Advanced</span>

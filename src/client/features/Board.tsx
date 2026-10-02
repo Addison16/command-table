@@ -14,6 +14,7 @@ const PlayerTile = memo(function PlayerTile({
   id,
   index,
   openPlayer,
+  openCommander,
   myView,
   autoFlipped = false,
   automatic = false,
@@ -22,6 +23,7 @@ const PlayerTile = memo(function PlayerTile({
   id: string;
   index: number;
   openPlayer: (id: string) => void;
+  openCommander: (playerId: string, commanderId?: string) => void;
   myView: boolean;
   autoFlipped?: boolean;
   automatic?: boolean;
@@ -37,10 +39,7 @@ const PlayerTile = memo(function PlayerTile({
       const member = s.room?.members.find((m) => m.seatId === id && m.status === 'approved');
       const editable =
         !s.readOnly &&
-        (s.mode === 'local' ||
-          (s.connected &&
-            s.room?.me.status === 'approved' &&
-            (s.room.hostId === s.room.me.id || s.room.everyoneEdits || s.room.me.seatId === id)));
+        (s.mode === 'local' || (s.connected && s.room?.me.status === 'approved' && s.room.me.seatId === id));
       return {
         name: seat.name,
         color: seat.color,
@@ -140,21 +139,30 @@ const PlayerTile = memo(function PlayerTile({
         </div>
         {statuses.length > 0 && (
           <div className="player-statuses" role="group" aria-label="Player status">
-            {statuses.map((status) => (
-              <span
-                className={`status-chip ${status.warning ? 'is-warning' : ''}`}
-                data-status={status.kind}
-                data-key={status.key}
-                key={status.key}
-                role="img"
-                aria-label={`${status.warning ? 'Warning. ' : ''}${status.description}`}
-                title={status.description}
-              >
-                <Icon name={status.warning ? 'warning' : status.kind} size={13} />
-                <span className="status-chip-label">{status.label}</span>
-                <strong className="status-chip-value">{status.value}</strong>
-              </span>
-            ))}
+            {statuses.map((status) => {
+              const Tag = status.kind === 'poison' ? 'span' : 'button';
+              return (
+                <Tag
+                  className={`status-chip ${status.warning ? 'is-warning' : ''}`}
+                  data-status={status.kind}
+                  data-key={status.key}
+                  key={status.key}
+                  role={status.kind === 'poison' ? 'img' : undefined}
+                  aria-label={`${status.kind === 'poison' ? '' : `${player.name}: open commander ${status.kind === 'tax' ? 'tax' : 'damage'}. `}${status.warning ? 'Warning. ' : ''}${status.description}`}
+                  aria-haspopup={status.kind === 'poison' ? undefined : 'dialog'}
+                  onClick={
+                    status.kind === 'poison'
+                      ? undefined
+                      : () => openCommander(id, status.kind === 'tax' ? status.key.slice(4) : undefined)
+                  }
+                  title={status.description}
+                >
+                  <Icon name={status.warning ? 'warning' : status.kind} size={13} />
+                  <span className="status-chip-label">{status.label}</span>
+                  <strong className="status-chip-value">{status.value}</strong>
+                </Tag>
+              );
+            })}
           </div>
         )}
         <div
@@ -199,7 +207,13 @@ const PlayerTile = memo(function PlayerTile({
     </section>
   );
 });
-export function Board({ openPlayer }: { openPlayer: (id: string) => void }) {
+export function Board({
+  openPlayer,
+  openCommander,
+}: {
+  openPlayer: (id: string) => void;
+  openCommander: (playerId: string, commanderId?: string) => void;
+}) {
   const game = useApp((s) => s.game)!,
     profile = useApp((s) => s.profile),
     room = useApp((s) => s.room),
@@ -228,7 +242,13 @@ export function Board({ openPlayer }: { openPlayer: (id: string) => void }) {
       )}
       {mine ? (
         <div className="my-view">
-          <PlayerTile id={seat!} index={game.order.indexOf(seat!)} openPlayer={openPlayer} myView />
+          <PlayerTile
+            id={seat!}
+            index={game.order.indexOf(seat!)}
+            openPlayer={openPlayer}
+            openCommander={openCommander}
+            myView
+          />
           <div className="seat-overview">
             {game.order
               .filter((id) => id !== seat)
@@ -256,6 +276,7 @@ export function Board({ openPlayer }: { openPlayer: (id: string) => void }) {
               id={id}
               index={i}
               openPlayer={openPlayer}
+              openCommander={openCommander}
               myView={false}
               autoFlipped={facesAcross(layout, i, game.order.length)}
               automatic={automatic}

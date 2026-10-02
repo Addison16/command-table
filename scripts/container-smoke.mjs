@@ -81,6 +81,7 @@ try {
   const host = await guest(),
     player = await guest();
   let room = (await request('/rooms', host, { game, name: 'Host' })).body;
+  assert.equal(room.me.seatId, room.seats[0].id);
   const pending = (await request('/join', player, { code: room.code, name: 'Player' })).body;
   assert.equal(pending.game, undefined);
   const envelope = (command, view = room) => ({
@@ -96,14 +97,29 @@ try {
     await request(
       `/rooms/${room.id}/command`,
       host,
-      envelope({ type: 'approve', memberId: pending.me.id, playerId: room.seats[0].id, replace: false }),
+      envelope({ type: 'approve', memberId: pending.me.id, playerId: room.seats[1].id, replace: false }),
     )
   ).body;
   assert.equal(approval.receipt.ok, true);
   room = approval.view;
-  const op = envelope({ type: 'adjust', playerId: room.seats[0].id, field: 'life', delta: -1 });
+  const op = envelope({ type: 'adjust', playerId: room.seats[1].id, field: 'life', delta: -1 });
   const changed = (await request(`/rooms/${room.id}/command`, player, op)).body;
-  assert.equal(changed.view.game.players[room.seats[0].id].life, 39);
+  assert.equal(changed.receipt.ok, true);
+  assert.equal(changed.view.game.players[room.seats[1].id].life, 39);
+  for (const [actor, target] of [
+    [host, room.seats[1].id],
+    [player, room.seats[0].id],
+  ]) {
+    const denied = (
+      await request(
+        `/rooms/${room.id}/command`,
+        actor,
+        envelope({ type: 'adjust', playerId: target, field: 'life', delta: -1 }, changed.view),
+      )
+    ).body;
+    assert.equal(denied.receipt.ok, false);
+    assert.deepEqual(denied.view.game, changed.view.game);
+  }
   assert.deepEqual((await request(`/rooms/${room.id}/command`, player, op)).body.receipt, changed.receipt);
   const assets = await fetch(origin);
   assert.equal(assets.status, 200);
@@ -116,7 +132,7 @@ try {
   running = true;
   await ready();
   const restored = (await request(`/rooms/${room.id}`, player)).body;
-  assert.equal(restored.me.seatId, room.seats[0].id);
+  assert.equal(restored.me.seatId, room.seats[1].id);
   assert.equal(restored.game.players[restored.me.seatId].life, 39);
   assert.deepEqual((await request(`/rooms/${room.id}/command`, player, op)).body.receipt, changed.receipt);
   const newer = (

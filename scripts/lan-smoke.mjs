@@ -51,7 +51,7 @@ try {
     config.publicOrigin,
   );
   await page.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
-  await page.getByRole('button', { name: "Decrease Player 1's life" }).click();
+  await page.getByRole('button', { name: "Decrease Host's life" }).click();
   await expect
     .poll(async () => {
       const result = await page.request.get(`${config.publicOrigin}/api/rooms/${room.id}`);

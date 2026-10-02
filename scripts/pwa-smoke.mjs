@@ -58,16 +58,24 @@ try {
       await page.emulateMedia({ colorScheme: 'light' });
       await page.goto(origin);
       await page.getByRole('button', { name: 'Quick 4 · 40 life' }).click();
-      const appearance = async (theme) => {
+      const appearance = async (theme, colorTheme, accentColor, tableFinish) => {
         await page.getByRole('button', { name: 'Game menu', exact: true }).click();
         await page.getByRole('button', { name: 'Display & preferences', exact: true }).click();
         await page.getByRole('combobox', { name: 'Appearance', exact: true }).selectOption(theme);
+        await page.getByRole('radio', { name: colorTheme, exact: true }).check();
+        await page.getByRole('radio', { name: accentColor, exact: true }).check();
+        await page.getByRole('combobox', { name: 'Table background', exact: true }).selectOption(tableFinish);
         await expect
           .poll(() => page.evaluate(() => localStorage.getItem('command-table-appearance')))
           .toBe(theme);
+        await expect
+          .poll(() =>
+            page.evaluate(() => JSON.parse(localStorage.getItem('command-table-style')).tableFinish),
+          )
+          .toBe(tableFinish);
         await page.getByRole('button', { name: 'Close Your table, your way', exact: true }).click();
       };
-      await appearance('dark');
+      await appearance('dark', 'Arcane', 'Teal', 'aurora');
       await page.evaluate(async () => {
         await navigator.serviceWorker.ready;
       });
@@ -76,6 +84,9 @@ try {
       await page.reload();
       await expect(page.getByTestId('life-0')).toHaveText('39');
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'arcane');
+      await expect(page.locator('html')).toHaveAttribute('data-accent-color', 'teal');
+      await expect(page.locator('html')).toHaveAttribute('data-table-finish', 'aurora');
       await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
       update = true;
       await page.evaluate(async () => {
@@ -93,7 +104,8 @@ try {
       await page.goto(`${origin}/?offline-reopen=1`, { timeout: 15000 });
       await expect(page.getByTestId('life-0')).toHaveText('39');
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-      await appearance('system');
+      await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'arcane');
+      await appearance('system', 'Forest', 'Copper', 'gilded');
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
       await page.emulateMedia({ colorScheme: 'dark' });
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -101,6 +113,9 @@ try {
       await expect(page.getByText('Saved here', { exact: true })).toBeVisible();
       await page.reload({ timeout: 15000 });
       await expect(page.getByTestId('life-0')).toHaveText('38');
+      await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'forest');
+      await expect(page.locator('html')).toHaveAttribute('data-accent-color', 'copper');
+      await expect(page.locator('html')).toHaveAttribute('data-table-finish', 'gilded');
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
       await page.emulateMedia({ colorScheme: 'light' });
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" fill="none">
+  <defs>
+    <linearGradient id="silk" x1="0" y1="0" x2="1000" y2="700" gradientUnits="userSpaceOnUse"><stop stop-color="#c6a25c" stop-opacity=".2"/><stop offset=".45" stop-color="#e9dfc6" stop-opacity=".035"/><stop offset="1" stop-color="#9480c9" stop-opacity=".19"/></linearGradient>
+    <linearGradient id="gleam"><stop stop-color="#e5d4ad" stop-opacity=".18"/><stop offset=".5" stop-color="#d2c4e6" stop-opacity=".03"/><stop offset="1" stop-color="#e2cd9a" stop-opacity=".15"/></linearGradient>
+  </defs>
+  <path d="M-70 430C180 500 200 28 520 95S780 544 1100 220L1100 430C775 678 650 231 390 292S80 650-70 585Z" fill="url(#silk)"/>
+  <g stroke="url(#gleam)"><path d="M-100 476C230 614 130 90 478 138S718 614 1080 290"/><path d="M-100 486C218 630 142 107 484 153S719 627 1080 305"/><path d="M-100 497C206 645 154 124 490 168S720 640 1080 320"/><path d="M-100 507C194 660 166 141 496 183S721 653 1080 335"/><path d="M-100 517C182 675 178 158 502 198S722 666 1080 350"/></g>
+  <path d="M-100 0C210 80 294 35 496-80M770 800C780 516 830 516 1090 490" stroke="#dac496" stroke-opacity=".09" stroke-width="42"/>
+</svg>

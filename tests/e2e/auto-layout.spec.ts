@@ -190,9 +190,7 @@ test('manual layouts persist and the rotation toggle can restore or freeze autom
   await expect(page.locator('.board')).toHaveAttribute('data-layout', 'shared');
 });
 
-test('old profiles follow rotation and a deliberate seat flip keeps the other seats facing correctly', async ({
-  page,
-}) => {
+test('old fixed layouts adopt device rotation and a later seat flip remains remembered', async ({ page }) => {
   await deviceOrientation(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Quick 4 · 40 life', exact: true }).click();
@@ -208,7 +206,8 @@ test('old profiles follow rotation and a deliberate seat flip keeps the other se
     const read = store.get('profile');
     read.onsuccess = () => {
       const profile = read.result;
-      delete profile.autoTableLayout;
+      delete profile.rotationDefaultsVersion;
+      profile.autoTableLayout = false;
       profile.tableLayout = 'shared';
       profile.rotations = Object.fromEntries(ids.map((id) => [id, true]));
       store.put(profile, 'profile');
@@ -222,6 +221,9 @@ test('old profiles follow rotation and a deliberate seat flip keeps the other se
   await page.reload();
   await expect(page.locator('.board')).toHaveAttribute('data-layout', 'upright');
   await expect(page.locator('.board [data-facing="across"]')).toHaveCount(0);
+  await openLayout(page);
+  await expect(page.getByRole('checkbox', { name: 'Follow device rotation', exact: true })).toBeChecked();
+  await page.getByRole('button', { name: 'Back to game', exact: true }).click();
   await rotate(page, true);
   await expect(page.locator('.board [data-facing="across"]')).toHaveCount(2);
   await page.getByRole('button', { name: 'Player 1 details', exact: true }).click();
@@ -311,7 +313,7 @@ test('room phones rotate independently while My seat and guest edit permissions 
     await expect(host.locator('.board')).toHaveAttribute('data-layout', 'upright');
     await expect(guest.locator('.board')).toHaveAttribute('data-layout', 'shared');
     await guest.getByRole('button', { name: "Decrease Rowan's life", exact: true }).tap();
-    await expect(host.getByTestId('life-0')).toHaveText('39');
+    await expect(host.getByTestId('life-1')).toHaveText('39');
     const before = (await (await guest.request.get(`/api/rooms/${room.id}`)).json()) as RoomView;
     await guest.getByRole('button', { name: 'My seat', exact: true }).click();
     await expect(guest.locator('.my-view .tile-content')).toHaveAttribute('data-facing', 'near');
@@ -326,7 +328,7 @@ test('room phones rotate independently while My seat and guest edit permissions 
     await expect(guest.locator('.board')).toHaveAttribute('data-layout', 'upright');
     await expect(host.locator('.board')).toHaveAttribute('data-layout', 'shared');
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
-    await expect(guest.getByRole('button', { name: "Decrease Player 2's life", exact: true })).toBeDisabled();
+    await expect(guest.getByRole('button', { name: "Decrease Host's life", exact: true })).toBeDisabled();
     const after = (await (await guest.request.get(`/api/rooms/${room.id}`)).json()) as RoomView;
     expect(after.game).toEqual(before.game);
     expect(after.me).toEqual(before.me);

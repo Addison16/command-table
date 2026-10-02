@@ -40,10 +40,12 @@ export function CommanderInput({
   const latest = useRef({ value, disabled, onChange });
   latest.current = { value, disabled, onChange };
   const lookup = useRef<AbortController | null>(null);
+  const selectedName = useRef<string | null>(null);
   const lookupSequence = useRef(0);
   const suggestionRequest = useRef<AbortController | null>(null);
   const suggestionSequence = useRef(0);
   const [focused, setFocused] = useState(false);
+  const [typedValue, setTypedValue] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [failedImage, setFailedImage] = useState('');
@@ -53,7 +55,10 @@ export function CommanderInput({
     return () => window.removeEventListener('online', retry);
   }, []);
   const [suggestions, setSuggestions] = useState<{ query: string; names: string[] }>();
-  const query = value.trim();
+  // Generated labels still identify unnamed commanders in saved games, but
+  // should not occupy the search field. Preserve any text the player types.
+  const inputValue = !card && /^Commander [12]$/.test(value) && typedValue !== value ? '' : value;
+  const query = inputValue.trim();
   const names = focused && suggestions?.query === query && !card ? suggestions.names : [];
 
   useEffect(() => {
@@ -80,6 +85,16 @@ export function CommanderInput({
   }, []);
 
   useEffect(() => {
+    input.current?.setCustomValidity(
+      looksLikeLink(value) ? 'Choose Find artwork to use this card link.' : '',
+    );
+    // Selecting a suggestion saves its name immediately. That local update
+    // belongs to the lookup already in flight, so do not cancel it here.
+    if (selectedName.current === value && !card?.id && !disabled) {
+      selectedName.current = null;
+      return;
+    }
+    selectedName.current = null;
     // A live update from another player also invalidates a lookup, even if
     // this field's own input handler did not run.
     lookup.current?.abort();
@@ -88,9 +103,6 @@ export function CommanderInput({
     ++suggestionSequence.current;
     setBusy(false);
     setError('');
-    input.current?.setCustomValidity(
-      looksLikeLink(value) ? 'Choose Find artwork to use this card link.' : '',
-    );
   }, [value, card?.id, card?.imageUrl, disabled]);
 
   useEffect(() => {
@@ -126,7 +138,7 @@ export function CommanderInput({
     };
   }, [query, focused, disabled, busy, card]);
 
-  async function findArtwork(name: string) {
+  async function findArtwork(name: string, select = false) {
     if (disabled || !name.trim()) return;
     lookup.current?.abort();
     suggestionRequest.current?.abort();
@@ -134,7 +146,11 @@ export function CommanderInput({
     const controller = new AbortController();
     lookup.current = controller;
     const sequence = ++lookupSequence.current;
-    const previousValue = value;
+    const previousValue = select ? name : value;
+    if (select && name !== value) {
+      selectedName.current = name;
+      onChange(name, null);
+    }
     setBusy(true);
     setError('');
     setSuggestions(undefined);
@@ -170,6 +186,7 @@ export function CommanderInput({
   }
 
   function cancelLookup() {
+    selectedName.current = null;
     lookup.current?.abort();
     ++lookupSequence.current;
     suggestionRequest.current?.abort();
@@ -199,18 +216,20 @@ export function CommanderInput({
         <input
           ref={input}
           id={id}
-          value={value}
+          value={inputValue}
           disabled={disabled}
           maxLength={512}
           autoComplete="off"
           spellCheck={false}
-          placeholder="Commander name or Scryfall card link"
+          placeholder="Commander"
           aria-describedby={`${id}-hint${error ? ` ${id}-error` : ''}`}
           onChange={(event) => {
             cancelLookup();
             setFocused(true);
             const next = event.target.value;
-            onChange(looksLikeLink(next) ? next : next.slice(0, 100), null);
+            const name = looksLikeLink(next) ? next : next.slice(0, 100);
+            setTypedValue(name);
+            onChange(name, null);
           }}
         />
       </label>
@@ -218,7 +237,15 @@ export function CommanderInput({
         <ul className="commander-suggestions" aria-label={`${label} suggestions`}>
           {names.map((name) => (
             <li key={name}>
-              <button type="button" disabled={disabled || busy} onClick={() => void findArtwork(name)}>
+              <button
+                type="button"
+                disabled={disabled || busy}
+                // Keep the input focused until click, including browsers that blur
+                // inputs without focusing the tapped button. Otherwise the list
+                // can disappear before the selection receives its click.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void findArtwork(name, true)}
+              >
                 {name}
               </button>
             </li>
@@ -234,7 +261,7 @@ export function CommanderInput({
         >
           {busy ? 'Finding artwork…' : 'Find artwork'}
         </button>
-        <small id={`${id}-hint`}>Optional. A name alone works too.</small>
+        <small id={`${id}-hint`}>Optional. Enter a name or Scryfall card link.</small>
       </div>
       {error && (
         <p id={`${id}-error`} className="commander-art-error" role="status">

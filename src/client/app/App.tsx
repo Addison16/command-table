@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { defaultSetup } from '../../shared/game.js';
+import { canUndoRoomAction } from '../../shared/permissions.js';
 import { type Game, type Roll } from '../../shared/schema.js';
 import {
   hydrate,
@@ -19,6 +20,7 @@ import { ask, ConfirmationDialog, downloadText, Icon, Sheet, Sigil } from '../co
 import { Board } from '../features/Board.js';
 import { SetupSheet } from '../features/Setup.js';
 import { PlayerDetails } from '../features/PlayerDetails.js';
+import { CommanderQuick } from '../features/CommanderQuick.js';
 import { Utilities } from '../features/Utilities.js';
 import { GroupLife } from '../features/GroupLife.js';
 import { GameMenu, HistorySheet } from '../features/GameMenu.js';
@@ -59,6 +61,12 @@ export function App() {
     setSheet(s);
   }, []);
   const openPlayer = useCallback((id: string) => open(`player:${id}`), [open]);
+  const openCommander = useCallback(
+    (playerId: string, commanderId?: string) => {
+      open(commanderId ? `tax:${commanderId}` : `damage:${playerId}`);
+    },
+    [open],
+  );
   const close = useCallback(() => {
     if (history.state?.mtgSheet === sheetKey.current) history.back();
     else setSheet(null);
@@ -131,8 +139,10 @@ export function App() {
     !state.readOnly &&
     (mode === 'local' ||
       (state.connected &&
+        state.room &&
+        state.room.me.status === 'approved' &&
         state.room?.undoRoomRevision === state.room?.revision &&
-        (state.room?.hostId === state.room?.me.id || game.undo.at(-1)?.actorId === state.room?.me.id)));
+        canUndoRoomAction(game, state.room.me.id, state.room.me.seatId, isHost())));
   if (!state.ready)
     return (
       <main className="loading">
@@ -341,12 +351,12 @@ export function App() {
                   ? `${state.pending} CHANGE${state.pending === 1 ? '' : 'S'} AWAITING CONFIRMATION`
                   : game.status === 'ended'
                     ? 'GAME ENDED'
-                    : mode === 'room' && state.room?.everyoneEdits
-                      ? 'FRIENDS CAN EDIT EVERY SEAT'
+                    : mode === 'room'
+                      ? 'EACH PLAYER CONTROLS THEIR OWN SEAT'
                       : 'MAY YOUR DRAWS BE KIND'}
               </span>
             </div>
-            <Board openPlayer={openPlayer} />
+            <Board openPlayer={openPlayer} openCommander={openCommander} />
             <nav className="table-toolbar" aria-label="Game controls">
               <button onClick={() => open('utilities')}>
                 <Icon name="dice" />
@@ -428,6 +438,18 @@ export function App() {
       {sheet === 'room' && state.room && <RoomSheet onClose={close} />}
       {sheet?.startsWith('player:') && game?.players[sheet.slice(7)] && (
         <PlayerDetails key={sheet} playerId={sheet.slice(7)} onClose={close} />
+      )}
+      {sheet?.startsWith('damage:') && game?.players[sheet.slice(7)] && (
+        <CommanderQuick key={`${game.id}:${sheet}`} playerId={sheet.slice(7)} mode="damage" onClose={close} />
+      )}
+      {sheet?.startsWith('tax:') && game?.commanders[sheet.slice(4)] && (
+        <CommanderQuick
+          key={`${game.id}:${sheet}`}
+          playerId={game.commanders[sheet.slice(4)].ownerId}
+          commanderId={sheet.slice(4)}
+          mode="tax"
+          onClose={close}
+        />
       )}
       {sheet === 'utilities' && game && (
         <Utilities

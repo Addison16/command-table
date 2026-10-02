@@ -4,6 +4,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Game, RoomView } from '../../src/shared/schema.js';
 import type { Profile } from '../../src/client/storage/repository.js';
 import type { CommanderCard } from '../../src/shared/cards.js';
+import { accentColors, colorThemes, tableFinishes } from '../../src/client/features/appearancePresets.js';
 
 type Theme = 'light' | 'dark';
 type Preference = Theme | 'system';
@@ -51,6 +52,19 @@ async function chooseTheme(page: Page, preference: Preference) {
   await expect
     .poll(async () => (await savedRecord<Profile & { theme?: Preference }>(page, 'profile')).theme)
     .toBe(preference);
+}
+
+async function chooseStyle(page: Page, colorTheme: string, accentColor = 'Gold', finish = 'glow') {
+  await page.getByRole('radio', { name: colorTheme, exact: true }).check();
+  await page.getByRole('radio', { name: accentColor, exact: true }).check();
+  await page.getByRole('combobox', { name: 'Table background', exact: true }).selectOption(finish);
+  await expect
+    .poll(() => savedRecord<Profile>(page, 'profile'))
+    .toMatchObject({
+      colorTheme: colorThemes.find((option) => option.name === colorTheme)!.id,
+      accentColor: accentColors.find((option) => option.name === accentColor)!.id,
+      tableFinish: finish,
+    });
 }
 
 async function expectTheme(page: Page, theme: Theme) {
@@ -161,6 +175,9 @@ test('an older saved profile defaults to system without replacing identity, pref
       read.onsuccess = () => {
         const profile = read.result as Record<string, unknown>;
         delete profile.theme;
+        delete profile.colorTheme;
+        delete profile.accentColor;
+        delete profile.tableFinish;
         profile.displayName = 'Mira remembered';
         profile.effects = 'reduced';
         records.put(profile, 'profile');
@@ -183,7 +200,13 @@ test('an older saved profile defaults to system without replacing identity, pref
   await page.emulateMedia({ colorScheme: 'dark' });
   await expectTheme(page, 'dark');
   await chooseTheme(page, 'light');
-  expect(await savedRecord<Profile>(page, 'profile')).toEqual({ ...previous, theme: 'light' });
+  expect(await savedRecord<Profile>(page, 'profile')).toEqual({
+    ...previous,
+    theme: 'light',
+    colorTheme: 'classic',
+    accentColor: 'theme',
+    tableFinish: 'glow',
+  });
   expect(await savedGame(page)).toEqual(game);
   expect(await savedRecord<Game[]>(page, 'archive')).toEqual(archive);
   await closeSettings(page);
@@ -206,6 +229,7 @@ test('host and guest appearance stays independent across their shared room and s
     await host.goto('/');
     await openSettings(host);
     await chooseTheme(host, 'dark');
+    await chooseStyle(host, 'Forest', 'Copper', 'tabletop');
     await closeSettings(host);
     await host.getByRole('button', { name: 'Create room', exact: true }).click();
     const created = host.waitForResponse(
@@ -219,6 +243,7 @@ test('host and guest appearance stays independent across their shared room and s
     await openSettings(guest);
     await expect(guest.getByRole('combobox', { name: 'Appearance', exact: true })).toHaveValue('system');
     await chooseTheme(guest, 'light');
+    await chooseStyle(guest, 'Ocean', 'Rose', 'plain');
     await closeSettings(guest);
     await guest.getByRole('button', { name: 'Quick 2 · 20 life', exact: true }).click();
     await guest.getByRole('button', { name: "Decrease Player 1's life", exact: true }).click();
@@ -238,6 +263,10 @@ test('host and guest appearance stays independent across their shared room and s
     await openSettings(guest);
     await chooseTheme(guest, 'dark');
     await expectTheme(guest, 'dark');
+    await expect(guest.locator('html')).toHaveAttribute('data-color-theme', 'ocean');
+    await expect(guest.locator('html')).toHaveAttribute('data-accent-color', 'rose');
+    await expect(host.locator('html')).toHaveAttribute('data-color-theme', 'forest');
+    await expect(host.locator('html')).toHaveAttribute('data-accent-color', 'copper');
     await closeSettings(guest);
     await openSettings(host);
     await chooseTheme(host, 'light');
@@ -271,6 +300,7 @@ test.describe('appearance before the app loads', () => {
     await page.goto('/');
     await openSettings(page);
     await chooseTheme(page, 'dark');
+    await chooseStyle(page, 'Arcane', 'Teal', 'gilded');
     await closeSettings(page);
     // Vite adds its own module in development; hold only the app entry so the
     // same pre-hydration assertion also works against the production bundle.
@@ -281,9 +311,17 @@ test.describe('appearance before the app loads', () => {
     const entryUrl = new URL(entry!, page.url()).href;
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    for (const cache of ['saved', 'invalid', 'denied'] as const) {
+    for (const cache of ['saved', 'malformed', 'invalid', 'denied'] as const) {
+      if (cache === 'malformed')
+        await page.evaluate(() => localStorage.setItem('command-table-style', '{bad json'));
       if (cache === 'invalid')
-        await page.evaluate(() => localStorage.setItem('command-table-appearance', 'invalid-preference'));
+        await page.evaluate(() => {
+          localStorage.setItem('command-table-appearance', 'invalid-preference');
+          localStorage.setItem(
+            'command-table-style',
+            JSON.stringify({ colorTheme: 'invalid', accentColor: '<style>', tableFinish: 'invalid' }),
+          );
+        });
       if (cache === 'denied')
         await page.addInitScript(() => {
           Object.defineProperty(window, 'localStorage', {
@@ -308,12 +346,27 @@ test.describe('appearance before the app loads', () => {
       try {
         await page.reload({ waitUntil: 'commit' });
         await requestStarted;
-        await expectTheme(page, cache === 'saved' ? 'dark' : 'light');
+        await expectTheme(page, cache === 'saved' || cache === 'malformed' ? 'dark' : 'light');
+        await expect(page.locator('html')).toHaveAttribute(
+          'data-color-theme',
+          cache === 'saved' ? 'arcane' : 'classic',
+        );
+        await expect(page.locator('html')).toHaveAttribute(
+          'data-accent-color',
+          cache === 'saved' ? 'teal' : 'theme',
+        );
+        await expect(page.locator('html')).toHaveAttribute(
+          'data-table-finish',
+          cache === 'saved' ? 'gilded' : 'glow',
+        );
         await expect(page.locator('#root')).toBeEmpty();
         release();
         await expect(page.getByRole('heading', { name: /Gather/ })).toBeVisible();
         // IndexedDB remains authoritative when its optional paint cache fails.
         await expectTheme(page, 'dark');
+        await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'arcane');
+        await expect(page.locator('html')).toHaveAttribute('data-accent-color', 'teal');
+        await expect(page.locator('html')).toHaveAttribute('data-table-finish', 'gilded');
         await openSettings(page);
         await expect(page.getByRole('combobox', { name: 'Appearance', exact: true })).toHaveValue('dark');
         await closeSettings(page);
@@ -325,6 +378,136 @@ test.describe('appearance before the app loads', () => {
     expect(errors).toEqual([]);
   });
 });
+
+test('theme controls support keyboard selection, retain game data and reset only appearance', async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Quick 4 · 40 life', exact: true }).click();
+  await page.getByRole('button', { name: "Decrease Player 1's life", exact: true }).click();
+  await expect(page.getByText('Saved here', { exact: true })).toBeVisible();
+  const game = await savedGame(page);
+  await openSettings(page);
+  await page.getByRole('combobox', { name: 'Effects', exact: true }).selectOption('reduced');
+  await chooseStyle(page, 'Arcane', 'Rose', 'tabletop');
+  await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'arcane');
+  await expect(page.locator('html')).toHaveAttribute('data-accent-color', 'rose');
+  await expect(page.locator('body')).toHaveCSS('background-image', /dragonfire\.svg/);
+  await page.getByRole('radio', { name: 'Arcane', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('radio', { name: 'Forest', exact: true })).toBeChecked();
+  await expect.poll(async () => (await savedRecord<Profile>(page, 'profile')).colorTheme).toBe('forest');
+  await page.reload();
+  await expect(page.getByTestId('life-0')).toHaveText('39');
+  await expect(page.locator('html')).toHaveAttribute('data-color-theme', 'forest');
+  await expect(page.locator('html')).toHaveAttribute('data-accent-color', 'rose');
+  await expect(page.locator('html')).toHaveAttribute('data-table-finish', 'tabletop');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expectTheme(page, 'light');
+  await openSettings(page);
+  await expect(page.getByRole('radio', { name: 'Forest', exact: true })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Rose', exact: true })).toBeChecked();
+  await page.getByRole('combobox', { name: 'Table background', exact: true }).selectOption('plain');
+  await expect(page.locator('body')).not.toHaveCSS(
+    'background-image',
+    /repeating-linear-gradient|radial-gradient/,
+  );
+  await expect
+    .poll(() =>
+      page
+        .locator('.player-tile')
+        .first()
+        .evaluate((tile) => getComputedStyle(tile).backgroundColor),
+    )
+    .not.toBe('rgba(0, 0, 0, 0)');
+  await page.getByRole('button', { name: 'Reset appearance', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Classic', exact: true })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Gold', exact: true })).toBeChecked();
+  await expect(page.getByRole('combobox', { name: 'Table background', exact: true })).toHaveValue('glow');
+  await expect(page.getByRole('combobox', { name: 'Effects', exact: true })).toHaveValue('reduced');
+  await closeSettings(page);
+  expect(await savedGame(page)).toEqual(game);
+});
+
+for (const mode of ['light', 'dark'] as const) {
+  test(`all table finishes in ${mode} paint every player, support keyboard selection and persist`, async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    await page.emulateMedia({ colorScheme: mode, reducedMotion: 'reduce' });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Quick 4 · 40 life', exact: true }).click();
+    await page.getByRole('button', { name: "Decrease Player 1's life", exact: true }).click();
+    await expect(page.getByText('Saved here', { exact: true })).toBeVisible();
+    const game = await savedGame(page);
+    await openSettings(page);
+    await page.getByRole('combobox', { name: 'Appearance', exact: true }).selectOption(mode);
+    await page.getByRole('combobox', { name: 'Effects', exact: true }).selectOption('reduced');
+    const backgrounds = new Set<string>();
+    for (const finish of tableFinishes) {
+      await page.getByRole('radio', { name: finish.name, exact: true }).check();
+      await expect(page.getByRole('combobox', { name: 'Table background', exact: true })).toHaveValue(
+        finish.id,
+      );
+      await expect
+        .poll(async () => (await savedRecord<Profile>(page, 'profile')).tableFinish)
+        .toBe(finish.id);
+      await expect(page.locator('html')).toHaveAttribute('data-table-finish', finish.id);
+      expect(await page.getByRole('dialog').evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(
+        true,
+      );
+      await closeSettings(page);
+      const paints = await page.locator('.player-tile').evaluateAll((tiles) =>
+        tiles.map((tile) => {
+          const style = getComputedStyle(tile);
+          return `${style.backgroundColor} ${style.backgroundImage}`;
+        }),
+      );
+      expect(paints).toHaveLength(4);
+      expect(paints.every((paint) => paint !== 'rgba(0, 0, 0, 0) none')).toBe(true);
+      backgrounds.add(paints[0]);
+      await expect(page.getByTestId('life-0')).toHaveText('39');
+      await audit(page);
+      await openSettings(page);
+    }
+    expect(backgrounds.size).toBe(tableFinishes.length);
+    await audit(page);
+    await page.getByRole('radio', { name: 'Celestial atlas', exact: true }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByRole('radio', { name: 'Verdant sanctuary', exact: true })).toBeChecked();
+    await expect(page.getByRole('combobox', { name: 'Table background', exact: true })).toHaveValue(
+      'verdant',
+    );
+    await expect.poll(async () => (await savedRecord<Profile>(page, 'profile')).tableFinish).toBe('verdant');
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('data-table-finish', 'verdant');
+    await expect(page.getByTestId('life-0')).toHaveText('39');
+    await openSettings(page);
+    await expect(page.getByRole('radio', { name: 'Verdant sanctuary', exact: true })).toBeChecked();
+    await expect(page.getByRole('combobox', { name: 'Effects', exact: true })).toHaveValue('reduced');
+    expect(await savedGame(page)).toEqual(game);
+  });
+
+  for (const preset of colorThemes) {
+    test(`${preset.name} in ${mode} has readable settings and player tiles`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.goto('/');
+      await openSettings(page);
+      await chooseStyle(page, preset.name, 'Gold', 'tabletop');
+      await expect(page.locator('html')).toHaveAttribute('data-color-theme', preset.id);
+      await audit(page);
+      expect(await page.getByRole('dialog').evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(
+        true,
+      );
+      await closeSettings(page);
+      await page.getByRole('button', { name: 'Quick 4 · 40 life', exact: true }).click();
+      await audit(page);
+      await page.getByRole('button', { name: "Decrease Player 1's life", exact: true }).click();
+      await expect(page.getByTestId('life-0')).toHaveText('39');
+    });
+  }
+}
 
 async function audit(page: Page) {
   await page.bringToFront();

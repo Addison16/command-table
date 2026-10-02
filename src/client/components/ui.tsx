@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { create } from 'zustand';
+import { emblemPaths, emblemSize } from '../brand/emblem.js';
 
 const paths: Record<string, ReactNode> = {
   plus: <path d="M12 5v14M5 12h14" />,
@@ -127,19 +128,33 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     </svg>
   );
 }
-export function Sigil({ index = 0, className = '' }: { index?: number; className?: string }) {
+export function Sigil({ className = '' }: { index?: number; className?: string }) {
+  const monochrome = className.split(/\s+/).includes('tile-sigil');
   return (
-    <svg className={className} viewBox="0 0 100 100" fill="none" aria-hidden="true">
-      <g stroke="currentColor" strokeWidth="1.2">
-        <circle cx="50" cy="50" r="38" strokeDasharray="2 7" />
-        <path d="m50 8 36 21v42L50 92 14 71V29Z" />
-        <g transform={`rotate(${index * 45} 50 50)`}>
-          <path d="m50 19 22 31-22 31-22-31Z M19 50h62M50 19v62" />
-          <circle cx="50" cy="50" r="15" />
-          <path d="m35 35 30 30M65 35 35 65" />
-        </g>
-      </g>
-      <circle cx="50" cy="50" r="4" fill="currentColor" />
+    <svg
+      className={className}
+      viewBox={`0 0 ${emblemSize} ${emblemSize}`}
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {emblemPaths.map((shape) => {
+        if (monochrome && shape.monochrome === 'omit') return null;
+        return (
+          <path
+            key={shape.id}
+            d={shape.d}
+            fill={monochrome ? (shape.monochrome === 'fill' ? 'currentColor' : 'none') : shape.fill}
+            stroke={
+              monochrome && (shape.stroke || shape.monochrome === 'stroke') ? 'currentColor' : shape.stroke
+            }
+            strokeWidth={shape.strokeWidth}
+            fillRule={shape.fillRule}
+            opacity={shape.opacity}
+          />
+        );
+      })}
     </svg>
   );
 }
@@ -149,12 +164,14 @@ export function Sheet({
   children,
   onClose,
   wide = false,
+  compact = false,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  compact?: boolean;
 }) {
   return (
     <Dialog.Root
@@ -166,7 +183,7 @@ export function Sheet({
       <Dialog.Portal>
         <Dialog.Overlay className="sheet-overlay" />
         <Dialog.Content
-          className={`sheet ${wide ? 'wide' : ''}`}
+          className={`sheet ${wide ? 'wide' : ''} ${compact ? 'compact' : ''}`}
           onInteractOutside={(event) => {
             // Dismissing a save error must not also dismiss the editor and its draft.
             const target = event.detail.originalEvent.target;

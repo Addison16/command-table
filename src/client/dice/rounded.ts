@@ -1,6 +1,12 @@
 import { add, dot, geometry, mul, type Face, type Vec } from './geometry.js';
 
-export type Surface = { points: Vec[]; normal: Vec; center: Vec; faceIndex?: number };
+export type Surface = {
+  points: Vec[];
+  normal: Vec;
+  center: Vec;
+  normals?: Vec[];
+  faceIndex?: number;
+};
 export type RoundedDie = { faces: Face[]; surfaces: Surface[] };
 const unit = (v: Vec) => mul(v, 1 / Math.hypot(...v));
 const cross = (a: Vec, b: Vec): Vec => [
@@ -45,7 +51,8 @@ export function roundedGeometry(sides: number, segments = 4): RoundedDie {
     }),
   );
   const arc = (a: Vec, b: Vec, t: number) => unit(add(mul(a, 1 - t), mul(b, t)));
-  const surface = (points: Vec[], normal: Vec) => surfaces.push({ points, normal, center: mean(points) });
+  const surface = (points: Vec[], normal: Vec, normals: Vec[]) =>
+    surfaces.push({ points, normal, normals, center: mean(points) });
   for (const {
     a,
     b,
@@ -54,7 +61,7 @@ export function roundedGeometry(sides: number, segments = 4): RoundedDie {
     for (let i = 0; i < segments; i++) {
       const n1 = arc(first, second, i / segments),
         n2 = arc(first, second, (i + 1) / segments);
-      surface([inset(a, n1), inset(b, n1), inset(b, n2), inset(a, n2)], arc(n1, n2, 0.5));
+      surface([inset(a, n1), inset(b, n1), inset(b, n2), inset(a, n2)], arc(n1, n2, 0.5), [n1, n1, n2, n2]);
     }
   }
   for (const { point, normals } of corners.values()) {
@@ -68,7 +75,11 @@ export function roundedGeometry(sides: number, segments = 4): RoundedDie {
       for (let j = 0; j < segments; j++) {
         const n1 = arc(a, b, j / segments),
           n2 = arc(a, b, (j + 1) / segments);
-        surface([center, inset(point, n1), inset(point, n2)], unit(add(add(n1, n2), normal)));
+        surface([center, inset(point, n1), inset(point, n2)], unit(add(add(n1, n2), normal)), [
+          normal,
+          n1,
+          n2,
+        ]);
       }
     });
   }

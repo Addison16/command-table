@@ -207,6 +207,8 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
     }
     case 'damage':
     case 'damageSet': {
+      if (commander!.ownerId === p!.id)
+        throw new Error('Choose another player’s commander as the damage source.');
       g.damageReceived[p!.id] ??= {};
       const old = g.damageReceived[p!.id][commander!.id] ?? 0;
       g.damageReceived[p!.id][commander!.id] = bounded(c.type === 'damage' ? old + c.amount : c.value);
@@ -398,7 +400,10 @@ export function warnings(g: Game, playerId: string): string[] {
     p.life <= 0 ? 'Life ≤ 0' : '',
     g.settings.poison && p.poison >= g.settings.poisonThreshold ? `${p.poison} poison` : '',
     g.settings.commander &&
-    Object.values(g.damageReceived[playerId] ?? {}).some((n) => n >= g.settings.commanderThreshold)
+    Object.entries(g.damageReceived[playerId] ?? {}).some(
+      ([commanderId, amount]) =>
+        g.commanders[commanderId]?.ownerId !== playerId && amount >= g.settings.commanderThreshold,
+    )
       ? 'Commander damage'
       : '',
   ].filter(Boolean);

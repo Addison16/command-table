@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { palettes, type Game } from '../../shared/schema.js';
-import { act, canEdit, isHost, savePlayer, useApp, updateProfile } from '../app/store.js';
+import { LIMIT, palettes, type Game } from '../../shared/schema.js';
+import { act, canEdit, savePlayer, useApp, updateProfile } from '../app/store.js';
 import { ask, Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { HoldButton } from '../components/HoldButton.js';
 import { facesAcross } from './TableLayout.js';
 import { useTableLayout } from './useTableLayout.js';
 import { CommanderInput } from '../components/CommanderInput.js';
+import { PlayerNameInput } from '../components/PlayerNameInput.js';
 import { CommanderCredits } from '../components/CommanderArtwork.js';
 import { CommanderReader } from '../components/CommanderReader.js';
 import type { CommanderCard } from '../../shared/cards.js';
@@ -83,6 +84,7 @@ function Counter({
             min={field === 'life' ? -999999 : 0}
             max="999999"
             required
+            disabled={disabled}
             value={exact}
             onChange={(e) => setExact(e.target.value)}
           />
@@ -96,12 +98,20 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
   const game = useApp((s) => s.game)!,
     profile = useApp((s) => s.profile),
     room = useApp((s) => s.room),
-    connected = useApp((s) => s.connected),
     readOnly = useApp((s) => s.readOnly),
     mode = useApp((s) => s.mode);
   const player = game.players[playerId];
+  const defaultName =
+    mode === 'room' && room?.members.some((member) => member.id === room.hostId && member.seatId === playerId)
+      ? 'Host'
+      : `Player ${game.order.indexOf(playerId) + 1}`;
   const { layout, automatic } = useTableLayout();
-  const [source, setSource] = useState(Object.keys(game.commanders)[0]);
+  const opponents = game.order.filter((id) => id !== playerId);
+  const damageSources = opponents.flatMap((id) =>
+    Object.values(game.commanders).filter((commander) => commander.ownerId === id),
+  );
+  const [sourceId, setSource] = useState('');
+  const source = damageSources.find((commander) => commander.id === sourceId) ?? damageSources[0];
   const [amount, setAmount] = useState('1');
   const [subtractLife, setSubtractLife] = useState(true);
   const [name, setName, resetName] = useLiveDraft(player.name),
@@ -113,13 +123,18 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
   const [saveStatus, setSaveStatus] = useState('');
   const commanders = Object.values(game.commanders).filter((c) => c.ownerId === playerId);
   const disabled = !canEdit(playerId) || player.eliminated || game.status === 'ended';
-  const manage =
-    !readOnly &&
-    game.status === 'active' &&
-    (mode === 'local' || connected) &&
-    (isHost() || room?.me.seatId === playerId);
+  const damageDisabled = disabled || !source;
+  const manage = canEdit(playerId) && game.status === 'active';
   return (
-    <Sheet title={player.name} description="Your life, your legends, your next move." onClose={onClose}>
+    <Sheet
+      title={player.name}
+      description={
+        mode === 'room' && !canEdit(playerId)
+          ? 'View this player’s information and commanders. Each player controls their own seat.'
+          : 'Your life, your legends, your next move.'
+      }
+      onClose={onClose}
+    >
       <CommanderReader commanders={commanders} />
       <CommanderCredits
         cards={Object.values(game.commanders)
@@ -141,15 +156,19 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
               const saved = await savePlayer({
                 type: 'editPlayer',
                 playerId,
-                name,
+                name: name.trim() || defaultName,
                 color,
-                commanders: commanders.map((commander) => ({
-                  id: commander.id,
-                  ...(commanderDrafts[commander.id] ?? {
+                commanders: commanders.map((commander, index) => {
+                  const selection = commanderDrafts[commander.id] ?? {
                     label: commander.label,
                     card: commander.card ?? null,
-                  }),
-                })),
+                  };
+                  return {
+                    id: commander.id,
+                    ...selection,
+                    label: selection.label.trim() || `Commander ${index + 1}`,
+                  };
+                }),
               });
               if (!saved) {
                 setSaveStatus('Save not confirmed. Your edits are still here.');
@@ -169,18 +188,16 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
             }
           }}
         >
-          <Field label="Player name">
-            <input
-              value={name}
-              maxLength={40}
-              required
-              disabled={!manage || saving}
-              onChange={(e) => {
-                setName(e.target.value);
-                setSaveStatus('');
-              }}
-            />
-          </Field>
+          <PlayerNameInput
+            label="Player name"
+            value={name}
+            defaultName={defaultName}
+            disabled={!manage || saving}
+            onChange={(value) => {
+              setName(value);
+              setSaveStatus('');
+            }}
+          />
           <Field label="Player color">
             <select
               value={color}
@@ -229,7 +246,7 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
               ? 'Take over this tab to edit.'
               : game.status === 'ended'
                 ? 'This game has ended.'
-                : 'The player in this seat or the host can edit these names.'}
+                : 'Only the player in this seat can edit their information.'}
           </p>
         )}
       </details>
@@ -263,24 +280,31 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
               Commander damage received
             </h3>
             <p className="hint">
-              Each commander is tracked separately, including your own. Warning at{' '}
-              {game.settings.commanderThreshold} from one source.
+              Each opposing commander is tracked separately. Warning at {game.settings.commanderThreshold}{' '}
+              from one source.
             </p>
+            {!source && <p className="hint">No opposing commanders are available.</p>}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (damageDisabled || !source) return;
                 void act({
                   type: 'damage',
                   playerId,
-                  commanderId: source,
+                  commanderId: source.id,
                   amount: Number(amount),
                   subtractLife,
                 });
               }}
             >
               <Field label="Combat damage source">
-                <select value={source} onChange={(e) => setSource(e.target.value)}>
-                  {game.order.map((owner) => (
+                <select
+                  disabled={damageDisabled}
+                  value={source?.id ?? ''}
+                  onChange={(e) => setSource(e.target.value)}
+                >
+                  {!source && <option value="">No opposing commanders</option>}
+                  {opponents.map((owner) => (
                     <optgroup label={game.players[owner].name} key={owner}>
                       {Object.values(game.commanders)
                         .filter((c) => c.ownerId === owner)
@@ -300,17 +324,18 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
                   min="0"
                   max="999999"
                   required
+                  disabled={damageDisabled}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                 />
               </Field>
-              <Toggle checked={subtractLife} onChange={setSubtractLife}>
+              <Toggle disabled={damageDisabled} checked={subtractLife} onChange={setSubtractLife}>
                 Also subtract this much life
               </Toggle>
               <p className="hint">
                 For infect or other effects, switch off life loss and adjust poison separately.
               </p>
-              <button className="primary full" disabled={disabled}>
+              <button className="primary full" disabled={damageDisabled}>
                 Record combat damage
               </button>
             </form>
@@ -318,12 +343,9 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
               <summary>
                 Correct recorded totals <span>Damage only</span>
               </summary>
-              {game.order.map((owner) => (
+              {opponents.map((owner) => (
                 <div className="damage-owner" key={owner}>
-                  <h4>
-                    {game.players[owner].name}
-                    {owner === playerId ? ' · your commanders' : ''}
-                  </h4>
+                  <h4>{game.players[owner].name}</h4>
                   {Object.values(game.commanders)
                     .filter((c) => c.ownerId === owner)
                     .map((c) => (
@@ -443,6 +465,7 @@ function DamageCorrection({
           required
           min="0"
           max="999999"
+          disabled={disabled}
           value={total}
           onChange={(e) => setTotal(e.target.value)}
         />
@@ -452,7 +475,7 @@ function DamageCorrection({
   );
 }
 
-function CommanderCasts({
+export function CommanderCasts({
   commander,
   disabled,
 }: {
@@ -472,7 +495,7 @@ function CommanderCasts({
       </p>
       <button
         className="secondary full"
-        disabled={disabled}
+        disabled={disabled || commander.casts >= LIMIT}
         onClick={() => void act({ type: 'cast', commanderId: commander.id })}
       >
         Record cast
@@ -493,6 +516,7 @@ function CommanderCasts({
               min="0"
               max="999999"
               required
+              disabled={disabled}
               value={casts}
               onChange={(e) => setCasts(e.target.value)}
             />

@@ -1,0 +1,294 @@
+/* Static, locally drawn materials. The table and its picker use the same recipes. */
+@layer base {
+  :root,
+  .finish-preview {
+    --finish-hue: #9e84da;
+    --finish-page-base: var(--palette-page-dark, #090d14);
+    --finish-tile-base: var(--palette-surface-dark, #141b28);
+    --finish-page: color-mix(in srgb, var(--finish-hue) 7%, var(--finish-page-base));
+    --finish-tile: color-mix(in srgb, var(--finish-hue) 6%, var(--finish-tile-base));
+    --finish-foil: #dec59066;
+    --finish-thread: #eadbc510;
+    --finish-stone: #d8d7e70b;
+    --finish-highlight: #fff0d619;
+    --finish-shadow: #02030a75;
+    --finish-frame: #deca9f35;
+    --finish-art: none;
+    --finish-grain: linear-gradient(transparent, transparent);
+    --finish-light: linear-gradient(transparent, transparent);
+    --finish-vignette: radial-gradient(ellipse at 50% 42%, transparent 30%, #00000030 100%);
+    --finish-tile-shade: radial-gradient(ellipse at 50% 46%, var(--finish-tile) 6%, transparent 88%);
+    --finish-player-strength: 17%;
+    --finish-ornament-opacity: 0.8;
+  }
+  :root[data-theme='light'],
+  :root[data-theme='light'] .finish-preview {
+    --finish-page-base: var(--palette-page-light, #f5f1e8);
+    --finish-tile-base: var(--palette-surface-light, #fffdf8);
+    --finish-page: color-mix(in srgb, var(--finish-hue) 7%, var(--finish-page-base));
+    --finish-tile: color-mix(in srgb, var(--finish-hue) 4%, var(--finish-tile-base));
+    --finish-foil: #8d62255c;
+    --finish-thread: #48361f12;
+    --finish-stone: #4b456d0c;
+    --finish-highlight: #ffffff80;
+    --finish-shadow: #4c38541c;
+    --finish-frame: #88653640;
+    --finish-vignette: radial-gradient(ellipse at 50% 42%, transparent 30%, #4c385415 100%);
+    --finish-player-strength: 12%;
+  }
+
+  [data-table-finish='glow'] {
+    --finish-hue: #9181b5;
+    --finish-art: url('/table-finishes/astral-silk.svg');
+    --finish-grain: repeating-linear-gradient(113deg, #d5c2ee04 0 1px, transparent 1px 3px);
+    --finish-light:
+      radial-gradient(ellipse at 3% 2%, #cbae7447, transparent 48%),
+      radial-gradient(ellipse at 98% 95%, #8c70c847, transparent 58%),
+      linear-gradient(125deg, transparent 30%, var(--finish-highlight) 48%, transparent 68%);
+  }
+  [data-table-finish='tabletop'] {
+    --finish-hue: #c26b3d;
+    --finish-art: url('/table-finishes/dragonfire.svg');
+    --finish-grain:
+      radial-gradient(circle at 13% 75%, #f4ad5838 0 0.8px, transparent 1.6px),
+      radial-gradient(circle at 83% 21%, #f8c87340 0 0.7px, transparent 1.7px),
+      radial-gradient(circle at 91% 68%, #dd68442e 0 0.8px, transparent 1.6px);
+    --finish-light:
+      radial-gradient(ellipse at 0% 100%, #e17a2d4d, transparent 48%),
+      radial-gradient(ellipse at 100% 2%, #d4573147, transparent 49%),
+      radial-gradient(ellipse at 98% 94%, #b13c292b, transparent 44%),
+      linear-gradient(130deg, var(--finish-highlight), transparent 32%, var(--finish-shadow));
+    --finish-frame: #eeac6666;
+  }
+  [data-table-finish='celestial'] {
+    --finish-hue: #647cdb;
+    --finish-art: url('/table-finishes/celestial-atlas.svg');
+    --finish-grain:
+      radial-gradient(circle at 11% 24%, #e9d6a838 0 0.6px, transparent 1px),
+      radial-gradient(circle at 73% 65%, #a2c6ff35 0 0.7px, transparent 1.2px);
+    --finish-light:
+      radial-gradient(ellipse at 18% 12%, #625ab846, transparent 56%),
+      radial-gradient(ellipse at 100% 100%, #355c9c50, transparent 60%),
+      radial-gradient(ellipse at 90% 2%, #c0994430, transparent 36%);
+    --finish-frame: #bfa56c55;
+  }
+  [data-table-finish='verdant'] {
+    --finish-hue: #409975;
+    --finish-art: url('/table-finishes/verdant-canopy.svg');
+    --finish-grain: repeating-linear-gradient(
+      152deg,
+      transparent 0 17px,
+      #86ae8110 18px,
+      transparent 19px 58px
+    );
+    --finish-light:
+      radial-gradient(ellipse at 9% 6%, #55bb6745, transparent 52%),
+      radial-gradient(ellipse at 98% 97%, #287f6859, transparent 55%),
+      linear-gradient(130deg, #d4b86b18, transparent 32%, var(--finish-shadow));
+    --finish-frame: #9dba7850;
+  }
+  [data-table-finish='obsidian'] {
+    --finish-hue: #598fc3;
+    --finish-art: url('/table-finishes/stormglass.svg');
+    --finish-grain:
+      radial-gradient(circle at 19% 14%, #aacfff24 0 0.6px, transparent 1.3px),
+      radial-gradient(circle at 85% 72%, #a5c8e62e 0 0.7px, transparent 1.4px);
+    --finish-light:
+      radial-gradient(ellipse at 3% 7%, #4c9dd64a, transparent 52%),
+      radial-gradient(ellipse at 99% 91%, #7768c64a, transparent 54%),
+      radial-gradient(ellipse at 95% 2%, #61c6dc25, transparent 41%),
+      linear-gradient(150deg, var(--finish-highlight), transparent 30%, var(--finish-shadow));
+    --finish-frame: #88bee866;
+  }
+  [data-table-finish='aurora'] {
+    --finish-hue: #7388d7;
+    --finish-art: url('/table-finishes/prismatic-veil.svg');
+    --finish-grain: repeating-linear-gradient(
+      122deg,
+      transparent 0 8px,
+      #c9c1fc09 9px,
+      transparent 10px 30px
+    );
+    --finish-light:
+      radial-gradient(ellipse at 0% 15%, #6ebbb448, transparent 56%),
+      radial-gradient(ellipse at 100% 90%, #9871d357, transparent 57%),
+      radial-gradient(ellipse at 98% 0%, #d592ba32, transparent 43%);
+    --finish-frame: #b4bbef60;
+  }
+  [data-table-finish='gilded'] {
+    --finish-hue: #a89162;
+    --finish-art: url('/table-finishes/gilded-marble.svg');
+    --finish-grain:
+      repeating-linear-gradient(123deg, transparent 0 33px, var(--finish-stone) 34px, transparent 35px 93px),
+      repeating-linear-gradient(31deg, transparent 0 58px, var(--finish-stone) 60px, transparent 63px 171px);
+    --finish-light:
+      radial-gradient(ellipse at 2% 2%, #c4a3572e, transparent 53%),
+      radial-gradient(ellipse at 100% 100%, #84899a26, transparent 60%),
+      linear-gradient(138deg, var(--finish-highlight), transparent 35%, var(--finish-shadow));
+    --finish-frame: #c8a86368;
+  }
+  :root[data-table-finish='plain'],
+  :root .finish-preview[data-table-finish='plain'] {
+    --finish-hue: #78808a;
+    --finish-grain: linear-gradient(145deg, #a3abc108, transparent 40%, #03071208);
+    --finish-player-strength: 0%;
+    --finish-vignette: linear-gradient(transparent, transparent);
+    --finish-tile-shade: linear-gradient(transparent, transparent);
+    --finish-ornament-opacity: 0;
+    --finish-frame: var(--line);
+  }
+
+  :root[data-table-finish] body {
+    min-height: 100svh;
+    background-color: var(--finish-page);
+    background-image: var(--finish-art), var(--finish-grain), var(--finish-light), var(--finish-vignette);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+}
+
+@layer components {
+  :root[data-table-finish] .player-tile:not(:has(.with-commander-art)):not(.eliminated) {
+    background-color: var(--finish-tile);
+    background-image:
+      var(--finish-tile-shade), var(--finish-art), var(--finish-grain),
+      radial-gradient(
+        ellipse at 50% 130%,
+        color-mix(in srgb, var(--wash) var(--finish-player-strength), transparent),
+        transparent 78%
+      ),
+      var(--finish-light);
+    background-size: cover;
+    background-position: center;
+    box-shadow:
+      inset 0 1px 0 var(--finish-highlight),
+      inset 0 0 28px var(--finish-shadow),
+      0 4px 18px #0000000f;
+  }
+  :root[data-table-finish] .player-tile:not(:has(.with-commander-art))::after {
+    content: '';
+    position: absolute;
+    inset: 7px;
+    border-radius: 7px;
+    pointer-events: none;
+    opacity: var(--finish-ornament-opacity);
+    background:
+      linear-gradient(var(--finish-frame), var(--finish-frame)) left top / 19px 1px,
+      linear-gradient(var(--finish-frame), var(--finish-frame)) left top / 1px 19px,
+      linear-gradient(var(--finish-frame), var(--finish-frame)) right bottom / 19px 1px,
+      linear-gradient(var(--finish-frame), var(--finish-frame)) right bottom / 1px 19px;
+    background-repeat: no-repeat;
+  }
+  :root[data-table-finish] .player-tile.active-turn {
+    box-shadow:
+      inset 0 0 0 1px var(--accent-line-strong),
+      inset 0 1px 0 var(--finish-highlight),
+      0 0 20px var(--accent-wash);
+  }
+  :root[data-table-finish='plain'] .player-tile:not(:has(.with-commander-art)):not(.eliminated) {
+    background-image: var(--finish-grain);
+    box-shadow: inset 0 1px 0 var(--tile-highlight);
+  }
+  .finish-group {
+    margin-top: 15px;
+  }
+  .finish-group legend {
+    font-size: 11px;
+  }
+  .finish-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px;
+  }
+  .finish-card {
+    gap: 7px;
+    padding: 7px 7px 10px;
+    overflow: hidden;
+    transition:
+      border-color 0.15s,
+      box-shadow 0.15s;
+  }
+  .finish-card .theme-card-name,
+  .finish-card .theme-card-description {
+    padding-inline: 2px;
+  }
+  .finish-card .theme-card-name {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .finish-card .appearance-selected {
+    color: var(--gold);
+  }
+  .finish-preview {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 104px;
+    border-radius: 6px;
+    overflow: hidden;
+    color: var(--text);
+    border: 1px solid var(--finish-frame);
+    background-color: var(--finish-tile);
+    background-image: var(--finish-art), var(--finish-grain), var(--finish-light), var(--finish-vignette);
+    background-size: cover;
+    background-position: center;
+    box-shadow:
+      inset 0 1px 0 var(--finish-highlight),
+      inset 0 0 18px var(--finish-shadow);
+  }
+  .finish-preview-material {
+    position: absolute;
+    left: 9px;
+    top: 9px;
+    font-size: 7px;
+    letter-spacing: 1.3px;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--soft-text);
+  }
+  .finish-preview-life {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 49px;
+    font-weight: 500;
+    letter-spacing: -2px;
+    line-height: 1;
+    text-shadow: var(--life-shadow);
+  }
+  .finish-preview-seats {
+    position: absolute;
+    bottom: 10px;
+    display: flex;
+    gap: 6px;
+  }
+  .finish-preview-seats i {
+    height: 3px;
+    width: 13px;
+    background: #d4bc7c;
+    border-radius: 2px;
+    box-shadow: 0 0 7px #d4bc7c28;
+  }
+  .finish-preview-seats i:nth-child(2) {
+    background: #82b8db;
+  }
+  .finish-preview-seats i:nth-child(3) {
+    background: #b89ee1;
+  }
+  .finish-preview-seats i:nth-child(4) {
+    background: #89b797;
+  }
+}
+
+@layer responsive {
+  /* Coarse-pointer layouts also paint the material to the bottom of the page. */
+  :root[data-table-finish] body {
+    background-size: cover;
+    background-repeat: no-repeat;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .finish-card {
+      transition: none;
+    }
+  }
+}

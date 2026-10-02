@@ -102,6 +102,58 @@ async function audit(page: Page) {
   ).toEqual([]);
 }
 
+test('tapping a commander suggestion selects it while the text field has focus', async ({
+  page,
+  context,
+}) => {
+  await mockCards(context);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Quick 4 · 40 life', exact: true }).tap();
+  await openPlayerEditor(page);
+  const input = commanderInput(page, 'Commander 1 name');
+  const field = input.getByLabel('Commander 1 name', { exact: true });
+  await field.fill('Tymna');
+  await expect(field).toBeFocused();
+  // Some phone browsers blur the text input without focusing a tapped button.
+  // Model that default focus behavior; preventing mousedown must keep the
+  // suggestion mounted until its click is delivered.
+  await page.evaluate(() => {
+    document.addEventListener('mousedown', (event) => {
+      if (
+        !event.defaultPrevented &&
+        event.target instanceof Element &&
+        event.target.closest('.commander-suggestions button')
+      )
+        (document.activeElement as HTMLElement | null)?.blur();
+    });
+  });
+  await input.getByRole('button', { name: cards[0].name, exact: true }).tap();
+  await expect(field).toHaveValue(cards[0].name);
+  await expect(input.locator('.commander-art-preview')).toBeVisible();
+  await page.getByRole('button', { name: 'Save changes', exact: true }).tap();
+  await expect(page.getByText('Changes saved.', { exact: true })).toBeVisible();
+});
+
+test('a suggested commander remains selected when artwork lookup fails', async ({ page, context }) => {
+  await mockCards(context);
+  await context.route('**/api/cards/resolve?**', (route) =>
+    route.fulfill({ status: 503, json: { error: 'Artwork service is unavailable.' } }),
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Quick 4 · 40 life', exact: true }).click();
+  await openPlayerEditor(page);
+  const input = commanderInput(page, 'Commander 1 name');
+  await input.getByLabel('Commander 1 name', { exact: true }).fill('Tymna');
+  await input.getByRole('button', { name: cards[0].name, exact: true }).tap();
+  await expect(input.getByLabel('Commander 1 name', { exact: true })).toHaveValue(cards[0].name);
+  await expect(input.getByRole('status')).toContainText('play without artwork');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.getByText('Changes saved.', { exact: true })).toBeVisible();
+  await page.reload();
+  await openPlayerEditor(page);
+  await expect(input.getByLabel('Commander 1 name', { exact: true })).toHaveValue(cards[0].name);
+});
+
 test('commander artwork saves and reloads without changing life, and can be removed accessibly', async ({
   page,
   context,
@@ -217,7 +269,7 @@ test('joining players choose artwork before approval and share it with the host 
     await host.getByRole('dialog').getByRole('button', { name: 'Create room', exact: true }).click();
     const room = (await (await created).json()) as RoomView;
     await expect(host.getByRole('button', { name: 'Live room', exact: true })).toBeVisible();
-    await host.getByRole('button', { name: "Decrease Player 1's life", exact: true }).click();
+    await host.getByRole('button', { name: "Decrease Host's life", exact: true }).click();
     await expect(host.getByTestId('life-0')).toHaveText('39');
     await guest.goto(room.joinUrl!);
     await guest.getByRole('textbox', { name: /^Your display name/ }).fill('Rowan');
@@ -236,7 +288,7 @@ test('joining players choose artwork before approval and share it with the host 
     await host.getByRole('button', { name: 'Approve seat', exact: true }).click();
     await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
     for (const page of [host, guest]) {
-      await expect(page.locator('.player-tile').first().locator('.commander-backdrop img')).toHaveAttribute(
+      await expect(page.locator('.player-tile').nth(1).locator('.commander-backdrop img')).toHaveAttribute(
         'src',
         cards[0].imageUrl,
       );
@@ -244,18 +296,19 @@ test('joining players choose artwork before approval and share it with the host 
     }
     const current = (await (await host.request.get(`/api/rooms/${room.id}`)).json()) as RoomView;
     const original = Object.values(room.game!.commanders).find(
-      (commander) => commander.ownerId === room.seats[0].id,
+      (commander) => commander.ownerId === room.seats[1].id,
     )!;
     expect(current.game!.commanders[original.id].card).toEqual(cards[0]);
     await guest.reload();
-    await expect(guest.locator('.player-tile').first().locator('.commander-backdrop img')).toHaveAttribute(
+    await expect(guest.locator('.player-tile').nth(1).locator('.commander-backdrop img')).toHaveAttribute(
       'src',
       cards[0].imageUrl,
     );
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
     await guest.getByRole('button', { name: "Decrease Rowan's life", exact: true }).click();
-    await expect(host.getByTestId('life-0')).toHaveText('38');
-    await openPlayerEditor(guest, 'Player 2');
+    await expect(host.getByTestId('life-1')).toHaveText('39');
+    await expect(host.getByTestId('life-0')).toHaveText('39');
+    await openPlayerEditor(guest, 'Host');
     await expect(
       commanderInput(guest, 'Commander 1 name').getByRole('button', { name: 'Find artwork', exact: true }),
     ).toBeDisabled();

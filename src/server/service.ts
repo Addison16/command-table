@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { canUndoRoomAction } from '../shared/permissions.js';
 import {
   commandSeat,
   isRelative,
@@ -158,7 +159,7 @@ export class RoomService {
       })),
       commanderEnabled: game.settings.commander,
       locked: !!r.locked,
-      everyoneEdits: !!r.everyone_edits,
+      everyoneEdits: false,
       expiresAt: r.expires_at,
       retentionDays: this.config.roomTtlDays,
       serverTime: this.now(),
@@ -167,11 +168,16 @@ export class RoomService {
       ...(approved && r.undo_room_revision !== null ? { undoRoomRevision: r.undo_room_revision } : {}),
     };
   }
-  create(sessionHash: string, input: unknown, name: string) {
+  create(sessionHash: string, input: unknown, name: string, hostPlayerId?: string) {
     const roomId = randomUUID();
     this.db.transaction(() => {
       this.assertSession(sessionHash);
       const g = gameSchema.parse(input);
+      const seatId = hostPlayerId ?? g.order[0];
+      if (!g.order.includes(seatId) || !g.players[seatId])
+        throw new HttpError(400, 'Choose an existing player for the host’s seat.');
+      const hostName = nameSchema.parse(name);
+      g.players[seatId].name = hostName;
       g.id = randomUUID();
       g.revision = 0;
       g.history = [];
@@ -196,8 +202,10 @@ export class RoomService {
           now + this.config.roomTtlDays * DAY,
         );
       this.db
-        .prepare("INSERT INTO members (id,room_id,session_hash,name,status) VALUES (?,?,?,?,'approved')")
-        .run(hostId, roomId, sessionHash, nameSchema.parse(name));
+        .prepare(
+          "INSERT INTO members (id,room_id,session_hash,name,seat_id,status) VALUES (?,?,?,?,?,'approved')",
+        )
+        .run(hostId, roomId, sessionHash, hostName, seatId);
     })();
     return this.view(roomId, sessionHash);
   }
@@ -413,7 +421,9 @@ export class RoomService {
         r.locked = Number(c.locked);
         break;
       case 'policy':
-        r.everyone_edits = Number(c.everyoneEdits);
+        if (c.everyoneEdits)
+          throw new HttpError(403, 'Each player can change only their own seat in shared rooms.');
+        r.everyone_edits = 0;
         break;
       case 'rotateCode':
         r.code = this.inviteCode();
@@ -429,11 +439,20 @@ export class RoomService {
     if (c.type === 'undo') {
       if (r.undo_room_revision !== r.revision || !g.undo.length)
         throw new HttpError(409, 'An intervening change makes undo unsafe. Use a normal correction.');
-      if (!host && g.undo.at(-1)?.actorId !== me.id)
-        throw new HttpError(403, 'Only the actor or host can undo the latest action.');
+      if (!canUndoRoomAction(g, me.id, me.seat_id, host))
+        throw new HttpError(403, 'You can undo only your own actions affecting your assigned seat.');
       return;
     }
-    if (host) return;
+    if (c.type === 'groupLife')
+      throw new HttpError(
+        403,
+        'Group life changes are available only on one device. Each room player updates their own life.',
+      );
+    if (
+      host &&
+      ['marker', 'turn', 'turnTracking', 'timer', 'trackers', 'end', 'reopen', 'rematch'].includes(c.type)
+    )
+      return;
     // Rolling for the table never sets the turn. Only the host may confirm it.
     if (c.type === 'roll') return;
     const seat = commandSeat(g, c),
@@ -441,10 +460,10 @@ export class RoomService {
     if (
       seat &&
       (numeric || ['customize', 'editPlayer', 'commanderName', 'eliminate'].includes(c.type)) &&
-      (seat === me.seat_id || (numeric && r.everyone_edits))
+      seat === me.seat_id
     )
       return;
-    throw new HttpError(403, 'You can change only your assigned seat. This action needs the host.');
+    throw new HttpError(403, 'You can change only your assigned seat. Table controls belong to the host.');
   }
   execute(sessionHash: string, input: unknown): { receipt: Receipt; view?: RoomView } {
     const env = envelopeSchema.parse(input);

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" fill="none">
+  <defs><linearGradient id="opal" x1="20" y1="250" x2="930" y2="400" gradientUnits="userSpaceOnUse"><stop stop-color="#58bba5" stop-opacity=".24"/><stop offset=".28" stop-color="#8cb7c4" stop-opacity=".04"/><stop offset=".62" stop-color="#976ad5" stop-opacity=".09"/><stop offset="1" stop-color="#d788b1" stop-opacity=".27"/></linearGradient><linearGradient id="rim"><stop stop-color="#abd5c0" stop-opacity=".4"/><stop offset=".5" stop-color="#bdb0e2" stop-opacity=".06"/><stop offset="1" stop-color="#f3b3df" stop-opacity=".28"/></linearGradient></defs>
+  <path d="M-80 680C153 684 102 42 386 64S636 717 1110 125L1110 244C664 864 484 158 314 218S238 823-80 805Z" fill="url(#opal)"/>
+  <path d="M-80 692C171 726 143 81 375 106S650 754 1090 185" stroke="url(#rim)" stroke-width="1.5"/>
+  <path d="M-90 139C290 206 294-130 450-150M719 805C730 517 893 637 1100 446" stroke="url(#opal)" stroke-width="78"/>
+  <g stroke="#c4c0e8" stroke-opacity=".14"><path d="M83 78L139 105L133 164L77 137ZM799 592L846 567L867 615L820 641ZM731 49L751 82L731 115L711 82Z"/></g>
+</svg>

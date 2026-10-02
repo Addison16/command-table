@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dot, geometry, orient, rollSpin } from '../src/client/dice/geometry.js';
 import { roundedGeometry } from '../src/client/dice/rounded.js';
-import { diceSurfaceColor } from '../src/client/dice/ivory.js';
+import { diceFaceLabel, diceSurfaceColor } from '../src/client/dice/ivory.js';
 import { visualDice } from '../src/client/dice/presentation.js';
 import { preferredDicePlayer, rememberDicePlayer } from '../src/client/dice/preference.js';
 import { createGame, defaultSetup, makeRoll } from '../src/shared/game.js';
@@ -164,6 +164,22 @@ describe('default dice player', () => {
 });
 
 describe('dice polyhedra', () => {
+  it('keeps every recorded result on the front engraving, including coins and percentile zeroes', () => {
+    for (const sides of [4, 6, 8, 10, 12, 20])
+      for (let value = 1; value <= sides; value++) {
+        const die = { sides, value, color: 'blue' };
+        expect(diceFaceLabel(die, 0)).toBe(String(value));
+        expect(new Set(Array.from({ length: sides }, (_, i) => diceFaceLabel(die, i))).size).toBe(sides);
+      }
+    expect(diceFaceLabel({ sides: 2, value: 1, color: 'ivory' }, 0)).toBe('H');
+    expect(diceFaceLabel({ sides: 2, value: 2, color: 'blue' }, 0)).toBe('T');
+    expect(diceFaceLabel({ sides: 10, value: 0, color: 'teal' }, 0)).toBe('0');
+    for (let value = 0; value <= 90; value += 10)
+      expect(diceFaceLabel({ sides: 10, value, color: 'teal', percent: true }, 0)).toBe(
+        String(value).padStart(2, '0'),
+      );
+    expect(diceFaceLabel({ sides: 20, value: 17, color: 'ivory', symbol: true }, 0)).toBe('✦');
+  });
   it.each([2, 4, 6, 8, 10, 12, 20])(
     'rounds d%i into a closed surface with finite outward fillets',
     (sides) => {
@@ -199,17 +215,18 @@ describe('dice polyhedra', () => {
       });
     }
     expect([...edges.values()].every((n) => n === 2)).toBe(true);
-    // The actual final animation pose must make the result face head-on and
-    // its lettering upright, for every motion seed and every supported solid.
+    // Every finished roll must be truly head-on, with level edges and exactly
+    // upright lettering. A shallow resting tilt is still a failed landing.
     for (const seed of [0, 0.37, 1]) {
       const face = faces[0],
         spin = rollSpin(1, seed);
-      for (const [axis, expected] of [
-        [face.normal, [0, 0, 1]],
-        [face.u, [1, 0, 0]],
-        [face.v, [0, 1, 0]],
-      ] as const)
-        orient(axis, face, spin).forEach((n, i) => expect(n).toBeCloseTo(expected[i]));
+      const normal = orient(face.normal, face, spin);
+      const u = orient(face.u, face, spin);
+      const v = orient(face.v, face, spin);
+      expect(spin).toEqual([0, 0, 0]);
+      normal.forEach((n, i) => expect(n).toBeCloseTo(i === 2 ? 1 : 0, 12));
+      u.forEach((n, i) => expect(n).toBeCloseTo(i === 0 ? 1 : 0, 12));
+      v.forEach((n, i) => expect(n).toBeCloseTo(i === 1 ? 1 : 0));
       expect(face.inradius).toBeGreaterThan(0);
     }
   });

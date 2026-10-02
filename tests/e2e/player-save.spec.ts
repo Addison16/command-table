@@ -78,7 +78,8 @@ test('one Save changes persists the player and both commanders, and one undo res
   const commanders = Object.values(before.commanders).filter((commander) => commander.ownerId === playerId);
   expect(commanders).toHaveLength(2);
   expect(commanders[0].casts).toBe(1);
-  expect(before.damageReceived[playerId][commanders[0].id]).toBe(5);
+  const source = Object.values(before.commanders).find((commander) => commander.ownerId !== playerId)!;
+  expect(before.damageReceived[playerId][source.id]).toBe(5);
   await page.getByText('Edit player & commanders', { exact: true }).click();
   const editor = page.locator('.edit-player');
   await expect(editor.locator('form')).toHaveCount(1);

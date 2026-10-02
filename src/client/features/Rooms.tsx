@@ -11,10 +11,14 @@ import {
 import { gameExport } from '../storage/repository.js';
 import { ask, downloadText, Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { CommanderInput } from '../components/CommanderInput.js';
+import { PlayerNameInput } from '../components/PlayerNameInput.js';
 import type { CommanderCard } from '../../shared/cards.js';
 export function JoinSheet({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState(new URLSearchParams(location.search).get('join') ?? ''),
-    [name, setName] = useState(useApp.getState().profile.displayName),
+    [name, setName] = useState(() => {
+      const remembered = useApp.getState().profile.displayName;
+      return /^(?:Host|Player(?: [1-8])?)$/.test(remembered) ? '' : remembered;
+    }),
     [busy, setBusy] = useState(false);
   return (
     <Sheet
@@ -28,7 +32,7 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
           setBusy(true);
           try {
             const { joinRoom } = await import('../adapters/room.js');
-            await joinRoom(code, name);
+            await joinRoom(code, name.trim() || 'Player');
             onClose();
           } catch (err) {
             report(err);
@@ -50,16 +54,13 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
             required
           />
         </Field>
-        <Field label="Your display name" hint="This will be your player name at the table.">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={40}
-            required
-            autoComplete="nickname"
-            placeholder="What should we call you?"
-          />
-        </Field>
+        <PlayerNameInput
+          label="Your display name"
+          hint="This will be your player name at the table."
+          value={name}
+          defaultName="Player"
+          onChange={setName}
+        />
         <button className="primary full" disabled={busy}>
           <Icon name="people" />
           {busy ? 'Finding your table…' : 'Join room'}
@@ -97,14 +98,19 @@ export function Lobby({ openRoom }: { openRoom: () => void }) {
 function SeatRequest({ room }: { room: RoomView }) {
   const connected = useApp((s) => s.connected),
     pending = useApp((s) => s.pending);
-  const [name, setName] = useState(room.me.seatProfile?.name ?? room.me.name),
+  const requestedSeatIndex = room.seats.findIndex((seat) => seat.id === room.me.requestedSeat);
+  const defaultName = requestedSeatIndex < 0 ? 'Player' : `Player ${requestedSeatIndex + 1}`;
+  const [name, setName] = useState(() => {
+      const savedName = room.me.seatProfile?.name ?? room.me.name;
+      return savedName === defaultName || (!room.me.seatProfile && savedName === 'Player') ? '' : savedName;
+    }),
     [commanders, setCommanders] = useState(room.me.seatProfile?.commanders ?? ['']);
   const [commanderCards, setCommanderCards] = useState<(CommanderCard | null)[]>(
     room.me.seatProfile?.commanderCards ?? commanders.map(() => null),
   );
   const commanderEnabled = room.commanderEnabled ?? true;
   const profile: SeatProfile = {
-    name: name.trim(),
+    name: name.trim() || defaultName,
     ...(commanderEnabled && (commanders.length === 2 || commanders.some((label) => label.trim()))
       ? {
           commanders: commanders.map((label, index) => label.trim() || `Commander ${index + 1}`),
@@ -120,7 +126,12 @@ function SeatRequest({ room }: { room: RoomView }) {
         event.preventDefault();
         const playerId = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value;
         if (!playerId || disabled) return;
-        const parsed = seatProfileSchema.safeParse(profile);
+        const seatIndex = room.seats.findIndex((seat) => seat.id === playerId);
+        if (seatIndex < 0) return;
+        const parsed = seatProfileSchema.safeParse({
+          ...profile,
+          name: name.trim() || `Player ${seatIndex + 1}`,
+        });
         if (!parsed.success) {
           report(
             new Error(
@@ -134,15 +145,7 @@ function SeatRequest({ room }: { room: RoomView }) {
     >
       <fieldset className="lobby-profile" disabled={disabled}>
         <legend>Your player</legend>
-        <Field label="Player name">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={40}
-            required
-            autoComplete="nickname"
-          />
-        </Field>
+        <PlayerNameInput label="Player name" value={name} defaultName={defaultName} onChange={setName} />
         {commanderEnabled && (
           <>
             {commanders.map((label, index) => (
@@ -278,14 +281,9 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
           >
             Lock joining
           </Toggle>
-          <Toggle
-            disabled={!ready}
-            checked={room.everyoneEdits}
-            onChange={(everyoneEdits) => void act({ type: 'policy', everyoneEdits })}
-          >
-            Friends can edit every seat
-          </Toggle>
-          <p className="hint">This allows numerical edits. Host administration remains private.</p>
+          <p className="hint">
+            Each player controls their own seat. Everyone can view the table and commanders.
+          </p>
           <button
             className="secondary full"
             disabled={!ready}
@@ -319,7 +317,7 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
                 : m.requestedSeat
                   ? `Requests ${room.seats.find((s) => s.id === m.requestedSeat)?.name}`
                   : m.status === 'approved'
-                    ? 'Host-controlled / no seat'
+                    ? 'No seat assigned'
                     : m.status}
             </p>
             {m.requestedSeat && m.seatProfile && (
@@ -423,10 +421,8 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
       </section>
       {!host && (
         <p className="hint">
-          {room.everyoneEdits
-            ? 'Approved friends can adjust every seat’s numerical trackers.'
-            : 'Approved players can adjust their own seat.'}{' '}
-          Contact the host to change seats.
+          You can adjust your own seat and view everyone’s information and commanders. Contact the host to
+          change seats.
         </p>
       )}
       {unresolved.length > 0 && (

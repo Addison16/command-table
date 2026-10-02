@@ -142,11 +142,15 @@ export function Utilities({
           Group life change
         </h3>
         <p className="hint">Apply life loss to selected opponents, with optional life gain for the caster.</p>
-        <button className="secondary full" disabled={!host || pending > 0} onClick={onGroupLife}>
+        <button
+          className="secondary full"
+          disabled={mode === 'room' || !host || pending > 0}
+          onClick={onGroupLife}
+        >
           Group life change
         </button>
-        {mode === 'room' && !isHost() && (
-          <p className="hint">The host applies group effects for the table.</p>
+        {mode === 'room' && (
+          <p className="hint">In shared rooms, each player records life changes on their own seat.</p>
         )}
       </section>
       <section className="detail-section">

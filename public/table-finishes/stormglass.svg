@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" fill="none">
+  <defs>
+    <linearGradient id="electric" x1="80" y1="0" x2="265" y2="700" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a7dce9" stop-opacity=".8"/>
+      <stop offset=".36" stop-color="#67b9ee" stop-opacity=".7"/>
+      <stop offset=".74" stop-color="#bbc4ff" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#90a6ef" stop-opacity=".3"/>
+    </linearGradient>
+    <linearGradient id="branch" x1="5" y1="45" x2="317" y2="608" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#97d6eb" stop-opacity=".52"/>
+      <stop offset=".6" stop-color="#8cbde8" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#aaa1e5" stop-opacity=".14"/>
+    </linearGradient>
+    <radialGradient id="cloud"><stop stop-color="#a6bccf" stop-opacity=".1"/><stop offset=".6" stop-color="#748cae" stop-opacity=".055"/><stop offset="1" stop-color="#748cae" stop-opacity="0"/></radialGradient>
+    <radialGradient id="flash"><stop stop-color="#92d2ff" stop-opacity=".17"/><stop offset=".36" stop-color="#629cdc" stop-opacity=".07"/><stop offset="1" stop-color="#628bdd" stop-opacity="0"/></radialGradient>
+    <g id="lightning">
+      <!-- An irregular stepped discharge with progressively finer forks. -->
+      <path id="bolt" d="M150-35L182 68L150 120L204 154L180 226L218 246L167 319L219 355L207 406L268 455L236 475L297 554L280 590L314 683"/>
+      <path id="forks" d="M150 120L103 141L108 182L73 231L84 262L45 306M180 226L128 256L136 289L101 324L125 352L88 410M218 246L264 273L266 321L315 356M219 355L174 381L162 430L118 460L137 496L102 548M268 455L297 434L317 449L357 427M280 590L224 588L207 622L173 642"/>
+      <path d="M150-35L182 68L150 120L204 154L180 226L218 246L167 319L219 355L207 406L268 455L236 475L297 554L280 590L314 683" stroke="#508dd0" stroke-opacity=".12" stroke-width="15" stroke-linejoin="round"/>
+      <path d="M150-35L182 68L150 120L204 154L180 226L218 246L167 319L219 355L207 406L268 455L236 475L297 554L280 590L314 683" stroke="#6cace9" stroke-opacity=".15" stroke-width="6" stroke-linejoin="round"/>
+      <use href="#bolt" stroke="url(#electric)" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+      <use href="#forks" stroke="#6c9fda" stroke-opacity=".1" stroke-width="6" stroke-linejoin="round"/>
+      <use href="#forks" stroke="url(#branch)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>
+      <g stroke="#98c6ed" stroke-opacity=".18" stroke-width=".7" stroke-linecap="round">
+        <path d="M108 182L133 206L123 230M73 231L37 231L21 263M136 289L155 310L153 337M162 430L191 456L184 480M266 321L242 344M118 460L89 459L67 481M297 554L323 553L349 580M224 588L211 565L180 556"/>
+      </g>
+    </g>
+  </defs>
+
+  <!-- Cloud banks and opposing bolts leave the central play area clear. -->
+  <ellipse cx="90" cy="18" rx="370" ry="177" fill="url(#cloud)"/>
+  <ellipse cx="910" cy="701" rx="370" ry="177" fill="url(#cloud)"/>
+  <ellipse cx="314" cy="154" rx="154" ry="212" fill="url(#flash)"/>
+  <ellipse cx="686" cy="566" rx="154" ry="212" fill="url(#flash)"/>
+  <use href="#lightning" transform="translate(180 0)"/>
+  <use href="#lightning" transform="translate(820 720) rotate(180)" opacity=".91"/>
+
+  <g stroke="#9cb5cf" stroke-opacity=".055" stroke-linecap="round">
+    <path d="M-55 95C52 54 123 95 181 63S315 16 363 54M-36 161C40 121 92 160 143 143S238 103 275 121M1055 625C948 666 877 625 819 657S685 704 637 666M1036 559C960 599 908 560 857 577S762 617 725 599" stroke-width="13"/>
+    <path d="M-27 366C24 335 52 356 72 332M1027 354C976 385 948 364 928 388" stroke-width="7"/>
+  </g>
+  <g fill="#b4d3f1" fill-opacity=".22">
+    <circle cx="55" cy="101" r=".9"/><circle cx="274" cy="25" r="1.1"/>
+    <circle cx="89" cy="494" r=".8"/><circle cx="339" cy="636" r="1"/>
+    <circle cx="945" cy="619" r=".9"/><circle cx="726" cy="695" r="1.1"/>
+    <circle cx="911" cy="226" r=".8"/><circle cx="661" cy="84" r="1"/>
+  </g>
+</svg>

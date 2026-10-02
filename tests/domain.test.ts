@@ -338,7 +338,7 @@ describe('game invariants', () => {
     let game = initial();
     game = action(game, {
       type: 'damage',
-      playerId: game.order[0],
+      playerId: game.order[1],
       commanderId: Object.keys(game.commanders)[0],
       amount: 7,
       subtractLife: true,
@@ -401,10 +401,49 @@ describe('game invariants', () => {
       expect(() => action(g, { type: 'set', playerId: id, field, value: -1 })).toThrow();
     expect(() => action(g, { type: 'adjust', playerId: id, field: 'life', delta: 999999 })).toThrow();
   });
-  it('keeps partners, own commanders, identity and life independent', () => {
+  it('rejects damage from either of a player’s own commanders without changing the game', () => {
+    const game = initial();
+    const original = structuredClone(game);
+    for (const playerId of game.order) {
+      const owned = Object.values(game.commanders).filter((commander) => commander.ownerId === playerId);
+      for (const commander of owned) {
+        const commands: Command[] = [
+          { type: 'damage', playerId, commanderId: commander.id, amount: 5, subtractLife: true },
+          { type: 'damage', playerId, commanderId: commander.id, amount: 5, subtractLife: false },
+          { type: 'damageSet', playerId, commanderId: commander.id, value: 5 },
+        ];
+        for (const command of commands) {
+          expect(() => action(game, command)).toThrow('Choose another player’s commander');
+          expect(game).toEqual(original);
+        }
+      }
+    }
+  });
+  it('loads older self-damage records without counting them toward commander warnings', () => {
+    const game = initial();
+    const playerId = game.order[0];
+    const owned = Object.values(game.commanders).filter((commander) => commander.ownerId === playerId);
+    const opponent = Object.values(game.commanders).find((commander) => commander.ownerId !== playerId)!;
+    game.damageReceived[playerId] = { [owned[0].id]: 21, [owned[1].id]: 30, [opponent.id]: 20 };
+    const saved = gameSchema.parse(JSON.parse(JSON.stringify(game)));
+    expect(saved).toEqual(game);
+    expect(warnings(saved, playerId)).toEqual([]);
+    const hit = action(saved, {
+      type: 'damage',
+      playerId,
+      commanderId: opponent.id,
+      amount: 1,
+      subtractLife: false,
+    });
+    expect(warnings(hit, playerId)).toContain('Commander damage');
+    expect(hit.damageReceived[playerId][owned[0].id]).toBe(21);
+    expect(hit.damageReceived[playerId][owned[1].id]).toBe(30);
+    expect(action(hit, { type: 'undo' }).damageReceived).toEqual(game.damageReceived);
+  });
+  it('keeps opposing partners, identity and life independent', () => {
     let g = initial();
-    const id = g.order[0],
-      cs = Object.values(g.commanders).filter((c) => c.ownerId === id);
+    const id = g.order[1],
+      cs = Object.values(g.commanders).filter((c) => c.ownerId === g.order[0]);
     for (const c of cs)
       g = action(g, { type: 'damage', playerId: id, commanderId: c.id, amount: 11, subtractLife: false });
     expect(warnings(g, id)).toEqual([]);
@@ -418,7 +457,7 @@ describe('game invariants', () => {
   });
   it('undoes combined damage and life atomically; corrections only affect damage', () => {
     const g = initial(),
-      id = g.order[0],
+      id = g.order[1],
       cid = Object.keys(g.commanders)[0];
     const hit = action(g, { type: 'damage', playerId: id, commanderId: cid, amount: 5, subtractLife: true });
     expect(hit.players[id].life).toBe(35);
@@ -503,7 +542,7 @@ describe('game invariants', () => {
         game = action(game, {
           type: 'damage',
           playerId,
-          commanderId: firstCommander.id,
+          commanderId: Object.values(game.commanders).find((entry) => entry.ownerId !== playerId)!.id,
           amount: 15,
           subtractLife: false,
         });

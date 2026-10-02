@@ -62,7 +62,7 @@ let editorResume: Promise<void> | undefined;
 let localPending: { command: Command; context: Parameters<typeof reduceGame>[2] }[] = [];
 let roomSend: ((command: Command | AdminCommand, groupId?: string) => Promise<void>) | undefined;
 type PlayerSave = Extract<Command, { type: 'editPlayer' }>;
-type SavedCommand = Extract<Command, { type: 'editPlayer' | 'groupLife' }>;
+type SavedCommand = Extract<Command, { type: 'editPlayer' | 'groupLife' | 'damage' }>;
 let roomSavePlayer: ((command: SavedCommand) => Promise<boolean>) | undefined;
 let disconnectRoom: (() => void) | undefined;
 export function registerRoom(
@@ -91,7 +91,7 @@ export async function updateProfile(patch: Partial<Profile>) {
   useApp.setState({ profile });
   try {
     await repository.put('profile', profile);
-    if (!repository.memory) cacheAppearance(profile.theme);
+    if (!repository.memory) cacheAppearance(profile);
   } catch {
     useApp.setState({ storageWarning: 'Preferences could not be saved. Check available browser storage.' });
   }
@@ -102,7 +102,7 @@ export async function hydrate() {
   useApp.setState({ storageWarning: repository.warning });
   try {
     const profile = await repository.profile();
-    if (!repository.memory) cacheAppearance(profile.theme);
+    if (!repository.memory) cacheAppearance(profile);
     useApp.setState({ profile });
     const { game, readOnly } = await repository.active();
     useApp.setState({ localGame: game, game, confirmed: game, readOnly });
@@ -224,6 +224,10 @@ export function act(command: Command | AdminCommand, groupId?: string): Promise<
 export function savePlayer(command: PlayerSave): Promise<boolean> {
   return saveCommand(command);
 }
+/** Quick damage closes only after the combined damage/life change is confirmed. */
+export function saveDamage(command: Extract<Command, { type: 'damage' }>): Promise<boolean> {
+  return saveCommand(command);
+}
 export type LifeReview = {
   gameId: string;
   revision: number;
@@ -245,7 +249,7 @@ async function saveCommand(command: SavedCommand, review?: LifeReview): Promise<
       state.room?.revision === review.roomRevision &&
       state.screen === 'board' &&
       !state.pending &&
-      isHost());
+      state.mode === 'local');
   try {
     await editorResume;
   } catch (error) {
@@ -258,6 +262,10 @@ async function saveCommand(command: SavedCommand, review?: LifeReview): Promise<
     return false;
   }
   if (state.mode === 'room') {
+    if (command.type === 'groupLife' || !canEdit(command.playerId)) {
+      report(new Error('You can change only your own seat in a shared room.'));
+      return false;
+    }
     if (!roomSavePlayer) {
       report(new Error('Reconnect before saving. Your changes have been kept.'));
       return false;
@@ -525,9 +533,6 @@ export function canEdit(playerId: string) {
   const s = useApp.getState();
   return (
     !s.readOnly &&
-    (s.mode === 'local' ||
-      (s.connected &&
-        s.room?.me.status === 'approved' &&
-        (isHost() || s.room.everyoneEdits || s.room.me.seatId === playerId)))
+    (s.mode === 'local' || (s.connected && s.room?.me.status === 'approved' && s.room.me.seatId === playerId))
   );
 }

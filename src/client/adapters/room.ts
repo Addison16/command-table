@@ -1,4 +1,5 @@
-import { createGame, isRelative, reduceGame } from '../../shared/game.js';
+import { commandSeat, createGame, isRelative, reduceGame } from '../../shared/game.js';
+import { canUndoRoomAction } from '../../shared/permissions.js';
 import { newId } from '../../shared/random.js';
 import {
   PROTOCOL,
@@ -363,6 +364,38 @@ async function send(command: Command | AdminCommand, groupId?: string, track?: (
   const state = useApp.getState();
   if (!state.connected || !state.room || socket?.readyState !== WebSocket.OPEN)
     throw new Error('Reconnecting — changes paused. No new changes were queued.');
+  if (command.type === 'groupLife')
+    throw new Error('In shared rooms, each player records life changes on their own seat.');
+  if (
+    [
+      'adjust',
+      'set',
+      'damage',
+      'damageSet',
+      'cast',
+      'castSet',
+      'customize',
+      'editPlayer',
+      'commanderName',
+      'eliminate',
+    ].includes(command.type) &&
+    (!state.confirmed ||
+      state.room.me.status !== 'approved' ||
+      !state.room.me.seatId ||
+      commandSeat(state.confirmed, command as Command) !== state.room.me.seatId)
+  )
+    throw new Error('You can change only your own seat in a shared room.');
+  if (
+    command.type === 'undo' &&
+    (!state.confirmed ||
+      !canUndoRoomAction(
+        state.confirmed,
+        state.room.me.id,
+        state.room.me.seatId,
+        state.room.hostId === state.room.me.id,
+      ))
+  )
+    throw new Error('You can undo only your own actions for your current seat.');
   if (pending.length >= 60) throw new Error('Waiting for the server to confirm your recent changes.');
   if (!isRelative(command as Command) && pending.length)
     throw new Error('Wait for the current changes to finish before making this correction.');
@@ -416,7 +449,9 @@ async function send(command: Command | AdminCommand, groupId?: string, track?: (
   }
   targetSocket.send(JSON.stringify({ type: 'command', csrf, envelope: env }));
 }
-function savePlayer(command: Extract<Command, { type: 'editPlayer' | 'groupLife' }>): Promise<boolean> {
+function savePlayer(
+  command: Extract<Command, { type: 'editPlayer' | 'groupLife' | 'damage' }>,
+): Promise<boolean> {
   return new Promise((resolve) => {
     let operationId: string | undefined;
     void send(command, undefined, (env) => {
@@ -441,9 +476,11 @@ function savePlayer(command: Extract<Command, { type: 'editPlayer' | 'groupLife'
 registerRoom(send, disconnect, savePlayer);
 export async function createRoom(setup: Setup, displayName: string) {
   await session(true);
+  const game = createGame(setup, newId, Date.now());
   const view = await api<RoomView>('/rooms', {
-    game: createGame(setup, newId, Date.now()),
+    game,
     name: displayName,
+    hostPlayerId: game.order[0],
   });
   useApp.setState({
     mode: 'room',

@@ -1,5 +1,6 @@
 import { elapsed } from '../../shared/game.js';
 import type { Game } from '../../shared/schema.js';
+import { emblemPaths, emblemSize } from '../brand/emblem.js';
 
 export type Recap = {
   gameId: string;
@@ -103,26 +104,25 @@ function box(ctx: CanvasRenderingContext2D, x: number, y: number, width: number,
 }
 
 function sigil(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-  // The same text-free homepage/icon geometry; no remote image or canvas taint.
+  // Draw the same local vector artwork used by the homepage and install icons.
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(size / 100, size / 100);
-  ctx.strokeStyle = gold;
-  ctx.fillStyle = gold;
-  ctx.lineWidth = 1.2;
-  ctx.setLineDash([2, 7]);
-  ctx.beginPath();
-  ctx.arc(50, 50, 38, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.stroke(new Path2D('m50 8 36 21v42L50 92 14 71V29Z'));
-  ctx.stroke(new Path2D('m50 19 22 31-22 31-22-31Z M19 50h62M50 19v62 M35 35l30 30M65 35 35 65'));
-  ctx.beginPath();
-  ctx.arc(50, 50, 15, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(50, 50, 4, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.scale(size / emblemSize, size / emblemSize);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const shape of emblemPaths) {
+    const path = new Path2D(shape.d);
+    ctx.globalAlpha = shape.opacity ?? 1;
+    if (shape.fill !== 'none') {
+      ctx.fillStyle = shape.fill;
+      ctx.fill(path, shape.fillRule ?? 'nonzero');
+    }
+    if (shape.stroke && shape.stroke !== 'none') {
+      ctx.strokeStyle = shape.stroke;
+      ctx.lineWidth = shape.strokeWidth ?? 1;
+      ctx.stroke(path);
+    }
+  }
   ctx.restore();
 }
 

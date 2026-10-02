@@ -11,30 +11,48 @@ import {
 } from '../../shared/schema.js';
 import { newId } from '../../shared/random.js';
 import { recoveryDeadline, reduceGame, type Context } from '../../shared/game.js';
+import {
+  accentColors,
+  colorThemes,
+  defaultAppearance,
+  tableFinishes,
+} from '../features/appearancePresets.js';
 
-const preferencesSchema = z.object({
-  schemaVersion: z.literal(1),
-  installationId: z.string().uuid(),
-  theme: z.enum(['system', 'light', 'dark']).default('system'),
-  effects: z.enum(['full', 'reduced', 'off']),
-  audio: z.boolean(),
-  haptics: z.boolean(),
-  wake: z.boolean(),
-  rotations: z.record(z.string(), z.boolean()),
-  tableLayout: z.enum(['upright', 'shared']).default('upright'),
-  autoTableLayout: z.boolean().default(true),
-  lastMode: z.enum(['local', 'room']).nullable(),
-  roomId: z.string().nullable(),
-  displayName: z.string().max(40),
-  view: z.enum(['table', 'mine']),
-  mySeat: z.string().nullable(),
-  setup: setupSchema.optional(),
-});
+const preferencesSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    installationId: z.string().uuid(),
+    theme: z.enum(['system', 'light', 'dark']).default('system'),
+    colorTheme: z.enum(colorThemes.map((option) => option.id)).default(defaultAppearance.colorTheme),
+    accentColor: z.enum(accentColors.map((option) => option.id)).default(defaultAppearance.accentColor),
+    tableFinish: z.enum(tableFinishes.map((option) => option.id)).default(defaultAppearance.tableFinish),
+    effects: z.enum(['full', 'reduced', 'off']),
+    audio: z.boolean(),
+    haptics: z.boolean(),
+    wake: z.boolean(),
+    rotations: z.record(z.string(), z.boolean()),
+    tableLayout: z.enum(['upright', 'shared']).default('upright'),
+    autoTableLayout: z.boolean().default(true),
+    rotationDefaultsVersion: z.literal(1).optional(),
+    lastMode: z.enum(['local', 'room']).nullable(),
+    roomId: z.string().nullable(),
+    displayName: z.string().max(40),
+    view: z.enum(['table', 'mine']),
+    mySeat: z.string().nullable(),
+    setup: setupSchema.optional(),
+  })
+  .transform((profile) => ({
+    ...profile,
+    // Adopt device rotation for existing browsers once. Subsequent manual choices
+    // save this marker with the profile and continue to survive reloads.
+    autoTableLayout: profile.rotationDefaultsVersion === 1 ? profile.autoTableLayout : true,
+    rotationDefaultsVersion: 1 as const,
+  }));
 export type Profile = z.infer<typeof preferencesSchema>;
 export const initialProfile = (): Profile => ({
   schemaVersion: 1,
   installationId: newId(),
-  theme: 'system',
+  ...defaultAppearance,
   effects: 'full',
   audio: false,
   haptics: false,
@@ -42,6 +60,7 @@ export const initialProfile = (): Profile => ({
   rotations: {},
   tableLayout: 'upright',
   autoTableLayout: true,
+  rotationDefaultsVersion: 1,
   lastMode: null,
   roomId: null,
   displayName: '',

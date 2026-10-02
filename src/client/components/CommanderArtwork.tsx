@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CommanderCard } from '../../shared/cards.js';
 import '../styles/commander-art.css';
 
-function ArtworkImage({ card }: { card: CommanderCard }) {
+export function ArtworkImage({ card }: { card: CommanderCard }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const retry = () => setFailed(false);

@@ -78,10 +78,10 @@ test('a shared ending returns everyone home and host recovery keeps the same sea
     await guest.getByRole('dialog').getByRole('button', { name: 'Join room', exact: true }).click();
     await guest.getByRole('button', { name: 'Request seat', exact: true }).first().click();
     await host.getByRole('button', { name: 'Approve seat', exact: true }).click();
-    await expect(guest.getByTestId('life-0')).toHaveText('40');
+    await expect(guest.getByTestId('life-1')).toHaveText('40');
     await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
     await guest.getByRole('button', { name: "Decrease Ivory guest's life", exact: true }).click();
-    await expect(host.getByTestId('life-0')).toHaveText('39');
+    await expect(host.getByTestId('life-1')).toHaveText('39');
     await endGame(host);
     await expect(guest.getByRole('button', { name: 'Quick 4 · 40 life', exact: true })).toBeVisible();
     await expect(guest.getByRole('button', { name: /^View shared room:/ })).toBeVisible();
@@ -93,13 +93,15 @@ test('a shared ending returns everyone home and host recovery keeps the same sea
     await host.getByRole('button', { name: 'Quick 2 · 20 life' }).click();
     await host.getByRole('button', { name: 'Home & recent games', exact: true }).click();
     await host.getByRole('button', { name: /^Reopen shared room:/ }).click();
-    await expect(host.getByTestId('life-0')).toHaveText('39');
+    await expect(host.getByTestId('life-1')).toHaveText('39');
     await expect(
       guest.getByRole('button', { name: "Decrease Ivory guest's life", exact: true }),
     ).toBeEnabled();
-    await expect(guest.getByRole('button', { name: "Decrease Player 2's life", exact: true })).toBeDisabled();
+    await expect(
+      guest.getByRole('button', { name: "Decrease Ivory host's life", exact: true }),
+    ).toBeDisabled();
     await guest.getByRole('button', { name: "Decrease Ivory guest's life", exact: true }).click();
-    await expect(host.getByTestId('life-0')).toHaveText('38');
+    await expect(host.getByTestId('life-1')).toHaveText('38');
   } finally {
     await context.close();
   }

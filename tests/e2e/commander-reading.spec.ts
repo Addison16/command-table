@@ -227,9 +227,9 @@ test('an approved guest can read another player’s commander without editing th
     );
     await host.getByRole('dialog').getByRole('button', { name: 'Create room', exact: true }).click();
     const room = (await (await created).json()) as RoomView;
-    await setCommander(host, 'Player 2', cards[0], true);
-    await host.getByRole('button', { name: "Decrease Player 2's life", exact: true }).click();
-    await expect(host.getByTestId('life-1')).toHaveText('39');
+    await setCommander(host, 'Host', cards[0], true);
+    await host.getByRole('button', { name: "Decrease Host's life", exact: true }).click();
+    await expect(host.getByTestId('life-0')).toHaveText('39');
     await guest.goto(room.joinUrl!);
     await guest.getByRole('textbox', { name: /^Your display name/ }).fill('Rowan');
     await guest.getByRole('dialog').getByRole('button', { name: 'Join room', exact: true }).click();
@@ -239,9 +239,9 @@ test('an approved guest can read another player’s commander without editing th
     await host.getByRole('button', { name: 'Approve seat', exact: true }).click();
     await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
-    await expect(guest.getByRole('button', { name: "Decrease Player 2's life", exact: true })).toBeDisabled();
+    await expect(guest.getByRole('button', { name: "Decrease Host's life", exact: true })).toBeDisabled();
     const before = (await (await host.request.get(`/api/rooms/${room.id}`)).json()) as RoomView;
-    await guest.getByRole('button', { name: 'Player 2 details', exact: true }).click();
+    await guest.getByRole('button', { name: 'Host details', exact: true }).click();
     const view = guest.getByRole('button', { name: `View commander: ${cards[0].name}`, exact: true });
     await expect(view).toBeEnabled();
     await expect(view).toHaveAttribute('aria-expanded', 'false');
@@ -266,8 +266,8 @@ test('an approved guest can read another player’s commander without editing th
     await expect(guest.getByRole('textbox', { name: 'Commander 1 name', exact: true })).toBeDisabled();
     await expect(guest.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
     await expect(guest.getByRole('button', { name: 'Record cast', exact: true })).toBeDisabled();
-    await guest.getByRole('button', { name: 'Close Player 2', exact: true }).click();
-    await expect(guest.getByTestId('life-1')).toHaveText('39');
+    await guest.getByRole('button', { name: 'Close Host', exact: true }).click();
+    await expect(guest.getByTestId('life-0')).toHaveText('39');
     const after = (await (await host.request.get(`/api/rooms/${room.id}`)).json()) as RoomView;
     expect(after.game).toEqual(before.game);
   } finally {

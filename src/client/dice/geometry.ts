@@ -67,9 +67,60 @@ function dual(vertices: Vec[]) {
   const radius = Math.max(...points.map((v) => Math.hypot(...v)));
   return points.map((v) => mul(v, 1 / radius));
 }
+function coinGeometry(): Face[] {
+  // Construct the cylinder directly. A dense convex-hull search would make a
+  // smooth coin unnecessarily expensive on its first appearance on a phone.
+  const segments = 32;
+  const radius = Math.hypot(1, 0.16);
+  const ring = (z: number): Vec[] =>
+    Array.from({ length: segments }, (_, i) => [
+      Math.cos((i * Math.PI * 2) / segments) / radius,
+      Math.sin((i * Math.PI * 2) / segments) / radius,
+      z / radius,
+    ]);
+  const top = ring(0.16),
+    bottom = ring(-0.16);
+  const faces: Face[] = [
+    {
+      points: top,
+      center: [0, 0, 0.16 / radius],
+      normal: [0, 0, 1],
+      u: [1, 0, 0],
+      v: [0, 1, 0],
+      inradius: Math.cos(Math.PI / segments) / radius,
+    },
+    {
+      points: [...bottom].reverse(),
+      center: [0, 0, -0.16 / radius],
+      normal: [0, 0, -1],
+      u: [1, 0, 0],
+      v: [0, -1, 0],
+      inradius: Math.cos(Math.PI / segments) / radius,
+    },
+  ];
+  for (let i = 0; i < segments; i++) {
+    const next = (i + 1) % segments;
+    const angle = ((i + 0.5) * Math.PI * 2) / segments;
+    const normal: Vec = [Math.cos(angle), Math.sin(angle), 0];
+    faces.push({
+      points: [bottom[i], bottom[next], top[next], top[i]],
+      center: mul(normal, Math.cos(Math.PI / segments) / radius),
+      normal,
+      u: [-Math.sin(angle), Math.cos(angle), 0],
+      v: [0, 0, 1],
+      inradius: Math.min(0.16, Math.sin(Math.PI / segments)) / radius,
+    });
+  }
+  return faces;
+}
 export function geometry(sides: number): Face[] {
   const key = sides === 100 ? 10 : sides;
   if (cache.has(key)) return cache.get(key)!;
+  if (key === 2) {
+    const faces = coinGeometry();
+    cache.set(key, faces);
+    return faces;
+  }
   let vertices: Vec[] = [];
   const phi = (1 + Math.sqrt(5)) / 2;
   const ico: Vec[] = [];
@@ -100,14 +151,9 @@ export function geometry(sides: number): Face[] {
     ]);
     vertices = dual(anti);
   } else if (key === 12) vertices = dual(ico);
-  else if (key === 2)
-    for (const z of [0.16, -0.16])
-      for (let i = 0; i < 12; i++)
-        vertices.push([Math.cos((i * Math.PI) / 6), Math.sin((i * Math.PI) / 6), z]);
   else vertices = ico;
   const radius = Math.max(...vertices.map((v) => Math.hypot(...v)));
   const faces = hull(vertices.map((v) => mul(v, 1 / radius)));
-  if (key === 2) faces.sort((a, b) => b.points.length - a.points.length);
   cache.set(key, faces);
   return faces;
 }
@@ -120,9 +166,9 @@ export function orient(point: Vec, face: Face, spin: Vec): Vec {
   return [x * Math.cos(c) - y * Math.sin(c), x * Math.sin(c) + y * Math.cos(c), z];
 }
 
-// At rest the recorded face's normal points directly at the viewer, and its
-// lettering axes match screen right/up. Never add a resting tilt here.
+// The result face must finish exactly square to the viewer, with level edges
+// and upright lettering. Remaining angular travel comes from the motion track.
 export function rollSpin(progress: number, seed: number): Vec {
-  const amount = Math.pow(1 - Math.max(0, Math.min(1, progress / 0.95)), 1.7);
-  return [amount * (18 + seed * 7), amount * (15 + seed * 13), amount * (10 + seed * 8)];
+  const amount = 1 - Math.max(0, Math.min(1, progress));
+  return [amount * (6.2 + seed * 4), amount * (8.6 + seed * 4.5), amount * (2.2 + seed * 2.4)];
 }

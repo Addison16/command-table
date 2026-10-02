@@ -78,8 +78,131 @@ test('shared table faces both sides, enlarges touch controls and remembers local
   await expect(page.getByTestId('life-0')).toHaveText('39');
 });
 
-type Draw = { a: number; b: number; c: number; d: number; x: number };
-type Probe = Window & { diceDraw: Record<string, Draw>; diceSample: number };
+type Draw = {
+  text: string;
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  x: number;
+  y: number;
+  faceX: number;
+  faceY: number;
+};
+type Probe = Window & { diceDraw: Draw[]; diceSample: number };
+
+async function installDiceProbe(page: Page) {
+  await page.addInitScript(() => {
+    const probe = window as unknown as Probe;
+    probe.diceDraw = [];
+    probe.diceSample = 19;
+    const random = crypto.getRandomValues.bind(crypto);
+    Object.defineProperty(crypto, 'getRandomValues', {
+      value: (array: Uint32Array<ArrayBuffer>) => {
+        if (array instanceof Uint32Array && array.length === 1) {
+          array[0] = probe.diceSample;
+          return array;
+        }
+        return random(array);
+      },
+    });
+    const paths = new WeakMap<CanvasRenderingContext2D, [number, number][]>();
+    const centers = new WeakMap<CanvasRenderingContext2D, [number, number]>();
+    const proto = CanvasRenderingContext2D.prototype;
+    const begin = proto.beginPath;
+    proto.beginPath = function () {
+      if (this.canvas.classList.contains('dice-canvas')) paths.set(this, []);
+      begin.call(this);
+    };
+    for (const method of ['moveTo', 'lineTo'] as const) {
+      const original = proto[method];
+      proto[method] = function (x, y) {
+        if (this.canvas.classList.contains('dice-canvas')) {
+          const matrix = this.getTransform();
+          paths
+            .get(this)
+            ?.push([matrix.a * x + matrix.c * y + matrix.e, matrix.b * x + matrix.d * y + matrix.f]);
+        }
+        original.call(this, x, y);
+      };
+    }
+    const clip = proto.clip;
+    proto.clip = function (...args: unknown[]) {
+      const points = paths.get(this);
+      if (this.canvas.classList.contains('dice-canvas') && points?.length) {
+        centers.set(this, [
+          points.reduce((sum, point) => sum + point[0], 0) / points.length,
+          points.reduce((sum, point) => sum + point[1], 0) / points.length,
+        ]);
+      }
+      Reflect.apply(clip, this, args);
+    };
+    const clear = proto.clearRect;
+    proto.clearRect = function (x, y, width, height) {
+      if (this.canvas.classList.contains('dice-canvas')) probe.diceDraw = [];
+      clear.call(this, x, y, width, height);
+    };
+    const fill = proto.fillText;
+    proto.fillText = function (text, x, y, maxWidth) {
+      if (this.canvas.classList.contains('dice-canvas')) {
+        const matrix = this.getTransform();
+        const ratio = this.canvas.width / this.canvas.getBoundingClientRect().width;
+        const center = centers.get(this) ?? [NaN, NaN];
+        probe.diceDraw.push({
+          text,
+          a: matrix.a,
+          b: matrix.b,
+          c: matrix.c,
+          d: matrix.d,
+          x: matrix.e / ratio,
+          y: matrix.f / ratio,
+          faceX: center[0] / ratio,
+          faceY: center[1] / ratio,
+        });
+      }
+      if (maxWidth === undefined) fill.call(this, text, x, y);
+      else fill.call(this, text, x, y, maxWidth);
+    };
+  });
+}
+
+async function expectUprightFace(page: Page, label: string, centerX: number) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (text) => (window as unknown as Probe).diceDraw.filter((draw) => draw.text === text).length,
+        label,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const draws = await page.evaluate(
+    (text) => (window as unknown as Probe).diceDraw.filter((draw) => draw.text === text),
+    label,
+  );
+  for (const draw of draws) {
+    expect(draw.a).toBeGreaterThan(0);
+    expect(draw.d).toBeGreaterThan(0);
+    expect(draw.b).toBeCloseTo(0, 5);
+    expect(draw.c).toBeCloseTo(0, 5);
+    expect(draw.a).toBeCloseTo(draw.d, 5);
+    expect(draw.x).toBeCloseTo(centerX, 1);
+    // Inspect the actual clipped face, so both axes must center the engraving.
+    expect(draw.x).toBeCloseTo(draw.faceX, 5);
+    expect(draw.y).toBeCloseTo(draw.faceY, 5);
+  }
+}
+
+async function expectSettledCanvasStable(page: Page) {
+  expect(
+    await page.locator('.dice-canvas').evaluate(async (canvas: HTMLCanvasElement) => {
+      const context = canvas.getContext('2d')!;
+      const before = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const after = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      return before.length === after.length && before.every((value, index) => value === after[index]);
+    }),
+  ).toBe(true);
+}
 
 test('eight-player narrow landscape tables keep life numbers separate from reachable controls', async ({
   page,
@@ -133,69 +256,61 @@ test('eight-player narrow landscape tables keep life numbers separate from reach
   await expect(page.getByTestId('life-0')).toHaveText('41');
 });
 
-test('settled dice draw their recorded numbers upright and centered on the face', async ({ page }, info) => {
-  await page.addInitScript(() => {
-    const probe = window as unknown as Probe;
-    probe.diceDraw = {};
-    probe.diceSample = 19;
-    const random = crypto.getRandomValues.bind(crypto);
-    Object.defineProperty(crypto, 'getRandomValues', {
-      value: (array: Uint32Array<ArrayBuffer>) => {
-        if (array instanceof Uint32Array && array.length === 1) {
-          array[0] = probe.diceSample;
-          return array;
-        }
-        return random(array);
-      },
-    });
-    const fill = CanvasRenderingContext2D.prototype.fillText;
-    CanvasRenderingContext2D.prototype.fillText = function (text, x, y, maxWidth) {
-      if (this.canvas.classList.contains('dice-canvas')) {
-        const matrix = this.getTransform();
-        probe.diceDraw[text] = {
-          a: matrix.a,
-          b: matrix.b,
-          c: matrix.c,
-          d: matrix.d,
-          x: matrix.e / (this.canvas.width / this.canvas.getBoundingClientRect().width),
-        };
+for (const motion of ['no-preference', 'reduce'] as const) {
+  test(`settled dice draw exact upright, centered, stable results with ${motion} motion and replay`, async ({
+    page,
+  }, info) => {
+    test.setTimeout(90000);
+    await installDiceProbe(page);
+    await page.emulateMedia({ reducedMotion: motion });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Quick 4 · 40 life' }).click();
+    const cases = [
+      { sides: 20, value: 20, labels: ['20'] },
+      { sides: 4, value: 4, labels: ['4'] },
+      { sides: 6, value: 6, labels: ['6'] },
+      { sides: 8, value: 8, labels: ['8'] },
+      { sides: 10, value: 10, labels: ['10'] },
+      { sides: 12, value: 12, labels: ['12'] },
+      { sides: 100, value: 100, labels: ['00', '0'] },
+      { sides: 100, value: 47, labels: ['40', '7'] },
+      { sides: 2, value: 1, labels: ['H'] },
+      { sides: 2, value: 2, labels: ['T'] },
+    ];
+    for (const { sides, value, labels } of cases) {
+      await page.evaluate((value) => {
+        const probe = window as unknown as Probe;
+        probe.diceDraw = [];
+        probe.diceSample = value - 1;
+      }, value);
+      await page.getByRole('button', { name: 'Utilities', exact: true }).click();
+      if (sides === 2) await page.getByRole('button', { name: 'Flip a coin', exact: true }).click();
+      else {
+        await page.getByRole('button', { name: `d${sides}`, exact: true }).click();
+        await page.getByRole('button', { name: `Roll 1d${sides}`, exact: true }).click();
       }
-      if (maxWidth === undefined) fill.call(this, text, x, y);
-      else fill.call(this, text, x, y, maxWidth);
-    };
+      await expect(page.getByTestId('dice-result')).toHaveAttribute('data-revealed', 'true');
+      for (const [index, label] of labels.entries())
+        await expectUprightFace(page, label, page.viewportSize()!.width * ((index + 0.5) / labels.length));
+      await expect(page.locator('.rolled-total')).toHaveText(
+        sides === 2 ? (value === 1 ? 'Heads' : 'Tails') : String(value),
+      );
+      await expectSettledCanvasStable(page);
+      if (sides === 20 && motion === 'no-preference' && info.project.name === 'chromium-phone')
+        await page.screenshot({ path: 'docs/screenshots/dice-upright.png' });
+      await page.getByRole('button', { name: 'Back to game', exact: true }).click();
+      // History bypasses motion independently of the browser's preference.
+      await page.getByRole('button', { name: 'Utilities', exact: true }).click();
+      await page.evaluate(() => {
+        (window as unknown as Probe).diceDraw = [];
+      });
+      await page.locator('.roll-history-button').first().click();
+      await expect(page.getByTestId('dice-result')).toHaveAttribute('data-revealed', 'true');
+      await expect(page.getByRole('button', { name: 'Skip animation', exact: true })).toHaveCount(0);
+      for (const [index, label] of labels.entries())
+        await expectUprightFace(page, label, page.viewportSize()!.width * ((index + 0.5) / labels.length));
+      await expectSettledCanvasStable(page);
+      await page.getByRole('button', { name: 'Back to game', exact: true }).click();
+    }
   });
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Quick 4 · 40 life' }).click();
-  for (const sides of [20, 4, 6, 8, 10, 12, 100, 2]) {
-    await page.evaluate((n) => {
-      const probe = window as unknown as Probe;
-      probe.diceDraw = {};
-      probe.diceSample = n - 1;
-    }, sides);
-    await page.getByRole('button', { name: 'Utilities', exact: true }).click();
-    if (sides === 2) await page.getByRole('button', { name: 'Flip a coin', exact: true }).click();
-    else {
-      await page.getByRole('button', { name: `d${sides}`, exact: true }).click();
-      await page.getByRole('button', { name: `Roll 1d${sides}`, exact: true }).click();
-    }
-    await expect(page.getByTestId('dice-result')).toHaveAttribute('data-revealed', 'true');
-    const labels = sides === 100 ? ['00', '0'] : [sides === 2 ? 'T' : String(sides)];
-    for (const [index, label] of labels.entries()) {
-      await expect
-        .poll(() => page.evaluate((text) => (window as unknown as Probe).diceDraw[text], label))
-        .toBeDefined();
-      const draw = await page.evaluate((text) => (window as unknown as Probe).diceDraw[text], label);
-      expect(draw.a).toBeGreaterThan(0);
-      expect(draw.d).toBeGreaterThan(0);
-      expect(draw.b).toBeCloseTo(0, 5);
-      expect(draw.c).toBeCloseTo(0, 5);
-      expect(draw.a).toBeCloseTo(draw.d, 5);
-      expect(draw.x).toBeCloseTo(page.viewportSize()!.width * (sides === 100 ? (index + 0.5) / 2 : 0.5), 1);
-    }
-    if (sides === 20 && info.project.name === 'chromium-phone')
-      await page.screenshot({ path: 'docs/screenshots/dice-upright.png' });
-    await page.getByRole('button', { name: 'Back to game', exact: true }).click();
-    // Exercise both animation and the static reduced-motion rendering path.
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-  }
-});
+}

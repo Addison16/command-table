@@ -1,4 +1,5 @@
 @import './theme.css';
+@import './appearance.css';
 
 @layer base, components, responsive;
 @layer base {
@@ -14,7 +15,7 @@
   body {
     margin: 0;
     min-width: 280px;
-    background: radial-gradient(ellipse at 50% -30%, var(--page-glow), transparent 65%), var(--page-color);
+    background: var(--table-texture), var(--table-glow), var(--page-color);
   }
   button,
   input,
@@ -199,6 +200,7 @@
   .brand img {
     width: 38px;
     height: 38px;
+    border-radius: 24%;
   }
   .brand b {
     font-weight: 500;
@@ -266,7 +268,7 @@
     height: 125px;
     margin: 0 auto 23px;
     color: var(--gold);
-    filter: drop-shadow(0 0 22px #d6b66a26);
+    filter: drop-shadow(0 0 22px var(--accent-line));
   }
   .hero-sigil > svg {
     width: 100%;
@@ -275,7 +277,7 @@
   .orbit {
     position: absolute;
     inset: -9px;
-    border: 1px solid #d6b66a14;
+    border: 1px solid var(--accent-wash);
     border-radius: 50%;
   }
   .orbit-two {
@@ -314,11 +316,11 @@
     border: 1px solid var(--accent-line);
     border-radius: 15px;
     padding: 23px;
-    background: radial-gradient(ellipse at 100% 0, #d6b66a0e, transparent 80%), var(--mode-gradient);
+    background: var(--mode-gradient);
   }
   .mode-card.shared {
     border-color: var(--line);
-    background: radial-gradient(ellipse at 100% 0, #7698d80f, transparent 80%), var(--shared-mode-gradient);
+    background: var(--shared-mode-gradient);
   }
   .mode-symbol {
     color: var(--gold);
@@ -351,7 +353,7 @@
     font-weight: 600;
     border-color: var(--primary-background);
     min-height: 48px;
-    box-shadow: 0 2px 15px #d6b66a10;
+    box-shadow: 0 2px 15px var(--accent-soft);
   }
   .primary:hover {
     background: var(--primary-hover);
@@ -507,7 +509,12 @@
     border-radius: 13px;
     overflow: hidden;
     background:
-      radial-gradient(ellipse at 50% 110%, color-mix(in srgb, var(--wash) 22%, transparent), transparent 85%),
+      var(--table-texture),
+      radial-gradient(
+        ellipse at 50% 110%,
+        color-mix(in srgb, var(--wash) var(--player-glow-strength), transparent),
+        transparent 85%
+      ),
       var(--tile-gradient);
     box-shadow: inset 0 1px 0 var(--tile-highlight);
     color: var(--text);
@@ -525,8 +532,8 @@
   .player-tile.active-turn {
     border-color: var(--gold);
     box-shadow:
-      inset 0 0 0 1px #d6b66a50,
-      0 0 15px #d6b66a10;
+      inset 0 0 0 1px var(--accent-line-strong),
+      0 0 15px var(--accent-soft);
   }
   .tile-content {
     position: relative;
@@ -758,8 +765,10 @@
     flex-shrink: 0;
     min-height: 76px;
     padding: 8px 4px max(8px, env(safe-area-inset-bottom));
-    margin: 0 -4px;
-    background: var(--page-color);
+    margin: 6px -4px 0;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
   }
   .table-toolbar button {
     flex: 1;

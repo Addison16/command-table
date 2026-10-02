@@ -151,42 +151,23 @@ async function liveRoom() {
 }
 
 describe('confirmed player saves in shared rooms', () => {
-  it('keeps a group effect unpreviewed until its successful receipt and resulting totals arrive', async () => {
+  it('rejects group effects and other-seat edits before previewing or sending them', async () => {
     const f = await liveRoom();
     const before = f.state.confirmed;
-    const command: Extract<Command, { type: 'groupLife' }> = {
-      type: 'groupLife',
-      casterId: before.order[0],
-      targetIds: [before.order[1]],
-      loss: 4,
-      gain: 2,
-    };
-    const complete = vi.fn();
-    const saving = f.savePlayer(command).then((saved) => {
-      complete(saved);
-      return saved;
-    });
-    const env = await f.submitted();
+    expect(
+      await f.savePlayer({
+        type: 'groupLife',
+        casterId: before.order[0],
+        targetIds: [before.order[1]],
+        loss: 4,
+        gain: 2,
+      }),
+    ).toBe(false);
+    expect(await f.savePlayer({ ...f.command, playerId: before.order[1] })).toBe(false);
+    expect(f.socket.send).not.toHaveBeenCalled();
+    expect(await f.repository.pending()).toEqual([]);
     expect(f.state.game).toEqual(before);
-    expect(complete).not.toHaveBeenCalled();
-    const next = reduceGame(before, command, {
-      id: newId(),
-      operationId: env.operationId,
-      actorId: f.room.me.id,
-      actor: 'Alex',
-      now: Date.now(),
-    });
-    const view = { ...f.room, revision: f.room.revision + 1, game: next };
-    f.socket.emit({ type: 'state', view });
-    expect(complete).not.toHaveBeenCalled();
-    f.socket.emit({
-      type: 'receipt',
-      view,
-      receipt: { operationId: env.operationId, gameId: before.id, revision: view.revision, ok: true },
-    });
-    expect(await saving).toBe(true);
-    expect(f.state.confirmed.players[command.casterId].life).toBe(42);
-    expect(f.state.confirmed.players[command.targetIds[0]].life).toBe(36);
+    expect(f.state.confirmed).toEqual(before);
   });
   it('waits for the matching successful receipt, even after a new snapshot arrives', async () => {
     const f = await liveRoom();

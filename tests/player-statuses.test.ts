@@ -23,11 +23,16 @@ function fixture(partners = false) {
 }
 
 describe('player card status summaries', () => {
-  it('keeps new and zeroed games quiet and safely handles an unavailable seat', () => {
+  it('keeps commander shortcuts visible at zero and safely handles an unavailable seat', () => {
     const { game, playerId, opponents } = fixture(true);
-    expect(playerStatuses(game, playerId)).toEqual([]);
+    const initial = playerStatuses(game, playerId);
+    expect(initial.map(({ kind, value }) => ({ kind, value }))).toEqual([
+      { kind: 'commander-damage', value: '0' },
+      { kind: 'tax', value: '+0' },
+      { kind: 'tax', value: '+0' },
+    ]);
     game.damageReceived[playerId] = { [opponents[0].id]: 0 };
-    expect(playerStatuses(game, playerId)).toEqual([]);
+    expect(playerStatuses(game, playerId)).toEqual(initial);
     expect(playerStatuses(game, newId())).toEqual([]);
   });
 
@@ -39,7 +44,7 @@ describe('player card status summaries', () => {
       [opponents[1].id]: 8,
     };
     const [damage] = playerStatuses(game, playerId);
-    expect(damage).toMatchObject({ kind: 'commander-damage', label: 'CMD MAX', value: '13', warning: false });
+    expect(damage).toMatchObject({ kind: 'commander-damage', label: 'DAMAGE', value: '13', warning: false });
     expect(damage.description).toContain('from one commander: 13');
     expect(damage.description).toContain("Mira's Atraxa: 13");
     expect(damage.description).toContain("Sam's Korvold: 8");
@@ -51,15 +56,15 @@ describe('player card status summaries', () => {
     expect(tied.description).toContain("Sam's Korvold: 13");
   });
 
-  it('includes own and eliminated-owner damage and preserves statuses after elimination or game end', () => {
+  it('ignores legacy self-damage, includes eliminated opponents, and preserves final statuses', () => {
     const { game, playerId, owned, opponents } = fixture();
     game.damageReceived[playerId] = { [owned[0].id]: 22, [opponents[0].id]: 7 };
     game.players[opponents[0].ownerId].eliminated = true;
     game.players[playerId].poison = 3;
     owned[0].casts = 2;
     const active = playerStatuses(game, playerId);
-    expect(active[0]).toMatchObject({ value: '22', warning: true });
-    expect(active[0].description).toContain("Rowan's Tymna: 22");
+    expect(active[0]).toMatchObject({ value: '7', warning: false });
+    expect(active[0].description).not.toContain("Rowan's Tymna");
     expect(active[0].description).toContain("Mira's Atraxa: 7");
     game.players[playerId].eliminated = true;
     game.status = 'ended';
@@ -73,12 +78,13 @@ describe('player card status summaries', () => {
     const { game, playerId, owned, opponents } = fixture(true);
     owned[1].casts = 3;
     opponents[0].casts = 9;
-    const secondOnly = playerStatuses(game, playerId);
-    expect(secondOnly).toHaveLength(1);
-    expect(secondOnly[0]).toMatchObject({ kind: 'tax', label: 'TAX II', value: '+6', warning: false });
-    expect(secondOnly[0].description).toContain('Kraum');
+    const secondOnly = playerStatuses(game, playerId).filter((status) => status.kind === 'tax');
+    expect(secondOnly).toHaveLength(2);
+    expect(secondOnly[0]).toMatchObject({ label: 'TAX I', value: '+0' });
+    expect(secondOnly[1]).toMatchObject({ kind: 'tax', label: 'TAX II', value: '+6', warning: false });
+    expect(secondOnly[1].description).toContain('Kraum');
     owned[0].casts = 1;
-    const both = playerStatuses(game, playerId);
+    const both = playerStatuses(game, playerId).filter((status) => status.kind === 'tax');
     expect(both.map(({ label, value }) => ({ label, value }))).toEqual([
       { label: 'TAX I', value: '+2' },
       { label: 'TAX II', value: '+6' },
@@ -86,7 +92,7 @@ describe('player card status summaries', () => {
     expect(both[0].description).toContain('Tymna');
     expect(both[0].description).toContain('next command-zone cast costs +2 additional generic mana');
     expect(both[0].key).not.toBe(both[1].key);
-    expect(both[1].key).toBe(secondOnly[0].key);
+    expect(both[1].key).toBe(secondOnly[1].key);
   });
 
   it('retains exact maximum values, including tax beyond the ordinary counter limit', () => {
@@ -96,7 +102,7 @@ describe('player card status summaries', () => {
     game.damageReceived[playerId] = { [opponents[0].id]: LIMIT };
     const statuses = playerStatuses(game, playerId);
     expect(statuses.map(({ label, value }) => ({ label, value }))).toEqual([
-      { label: 'CMD MAX', value: '999999' },
+      { label: 'DAMAGE', value: '999999' },
       { label: 'POISON', value: '999999' },
       { label: 'TAX', value: '+1999998' },
     ]);
@@ -126,11 +132,11 @@ describe('player card status summaries', () => {
     game.damageReceived[playerId] = { [opponents[0].id]: 4 };
     game.players[playerId].poison = 3;
     const below = playerStatuses(game, playerId);
-    expect(below.map((status) => status.warning)).toEqual([false, false]);
+    expect(below.map((status) => status.warning)).toEqual([false, false, false]);
     expect(below[0].description).toContain('Warning at 5 from one commander');
     expect(below[1].description).toContain('Warning at 4');
     game.damageReceived[playerId][opponents[0].id] = 5;
     game.players[playerId].poison = 4;
-    expect(playerStatuses(game, playerId).map((status) => status.warning)).toEqual([true, true]);
+    expect(playerStatuses(game, playerId).map((status) => status.warning)).toEqual([true, true, false]);
   });
 });
