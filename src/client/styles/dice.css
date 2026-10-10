@@ -14,6 +14,10 @@
     outline: none;
     overflow: hidden;
     isolation: isolate;
+    /* Absolute children ignore this padding; the dice canvas reads it to keep
+       every die clear of the notch and rounded corners. */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
   }
   .dice-canvas {
     position: absolute;
@@ -306,7 +310,7 @@
   @media (max-height: 500px) and (orientation: landscape) {
     .dice-scorecard.revealed {
       left: auto;
-      right: 14px;
+      right: max(14px, env(safe-area-inset-right));
       transform: none;
       width: 310px;
       max-height: calc(100% - 28px);

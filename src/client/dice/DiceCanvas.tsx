@@ -3,6 +3,7 @@ import { dot, orient, rollSpin, type Vec } from './geometry.js';
 import { roundedGeometry, type RoundedDie } from './rounded.js';
 import { drawIvoryDie } from './ivory.js';
 import { makeDieMotion, sampleDieMotion } from './motion.js';
+import { dieAnchor, diceColumns, type SafeInsets } from './layout.js';
 
 export type VisualDie = {
   value: number;
@@ -44,6 +45,7 @@ export function DiceCanvas({
     const ctx = context;
     let width = innerWidth;
     let height = innerHeight;
+    let safe: SafeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
     let frame = 0;
     let stopped = false;
     let completed = false;
@@ -87,12 +89,21 @@ export function DiceCanvas({
     function draw(elapsed: number) {
       ctx.clearRect(0, 0, width, height);
       const landscape = height < 500 && width > height;
-      const trayWidth = landscape ? Math.max(160, width - 340) : width;
-      const space = Math.max(110, height - (landscape ? 100 : Math.min(resultSpace, height * 0.57) + 85));
-      const columns =
-        dice.length > 10
-          ? Math.max(2, Math.round(Math.sqrt((dice.length * trayWidth) / space)))
-          : Math.min(dice.length, trayWidth < 520 ? (height < 650 && dice.length >= 6 ? 3 : 2) : 4);
+      // Keep the tray inside the safe area, so no die settles beneath a
+      // camera notch or rounded corner. The heading and scorecard already
+      // respect the same insets.
+      const trayLeft = safe.left;
+      const safeWidth = width - safe.left - safe.right;
+      const trayWidth = landscape ? Math.max(160, safeWidth - 340) : safeWidth;
+      const trayTop = Math.max(65, safe.top + 45);
+      const reserved =
+        trayTop -
+        65 +
+        Math.max(0, safe.bottom - 16) +
+        (landscape ? 100 : Math.min(resultSpace, height * 0.57) + 85);
+      const space = Math.max(110, height - reserved);
+      const columns = diceColumns(dice.length, trayWidth, space);
+      const center: Point = [trayLeft + trayWidth / 2, trayTop + space / 2];
       const rows = Math.ceil(dice.length / columns);
       const cellHeight = space / rows;
       const showNames = dice.length <= 10;
@@ -107,8 +118,15 @@ export function DiceCanvas({
         const body = bodies[index];
         const pose = sampleDieMotion(body.motion, elapsed);
         const rowColumns = Math.min(columns, dice.length - Math.floor(index / columns) * columns);
-        const targetX = trayWidth * (((index % columns) + 0.5) / rowColumns);
-        const targetY = 65 + cellHeight * (Math.floor(index / columns) + 0.5);
+        const [targetX, targetY] = dieAnchor(
+          center,
+          [
+            trayLeft + trayWidth * (((index % columns) + 0.5) / rowColumns),
+            trayTop + cellHeight * (Math.floor(index / columns) + 0.5),
+          ],
+          elapsed,
+          duration,
+        );
         const spin = rollSpin(1 - pose.rotation, body.seed);
         if (die.sides === 2) {
           spin[0] *= 1.5;
@@ -212,6 +230,14 @@ export function DiceCanvas({
       const rect = element.getBoundingClientRect();
       width = rect.width;
       height = rect.height;
+      // The dice screen pads itself by the safe-area insets; read them back.
+      const style = getComputedStyle(element.parentElement ?? element);
+      safe = {
+        top: parseFloat(style.paddingTop) || 0,
+        right: parseFloat(style.paddingRight) || 0,
+        bottom: parseFloat(style.paddingBottom) || 0,
+        left: parseFloat(style.paddingLeft) || 0,
+      };
       const ratio = Math.min(devicePixelRatio || 1, 2);
       element.width = Math.round(width * ratio);
       element.height = Math.round(height * ratio);
