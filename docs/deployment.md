@@ -57,6 +57,18 @@ The app runs as UID 1000 (`node`) inside the container. Its named volume is `mtg
 
 Never use `docker compose down -v` to update: it deletes the volume containing server games and identities. Normal updates only need `pull` and `up -d`, after a backup. Browser-local games are stored separately in each browser.
 
+## Unraid
+
+Command Table has an Unraid template, so it appears on the **Docker** page with its icon and a **WebUI** link. Open the terminal with the **>_** button in the Unraid web interface and add the template once:
+
+```sh
+curl -fsSL -o /boot/config/plugins/dockerMan/templates-user/my-CommandTable.xml https://raw.githubusercontent.com/Addison16/command-table/main/infra/unraid/command-table.xml
+```
+
+On the **Docker** page, choose **Add Container** and pick **CommandTable** from the **Template** list. Set **App address** to the exact address phones will open, such as `http://192.168.1.50:8080`, and choose **Apply**. The template keeps data in `/mnt/user/appdata/command-table` and runs the app as Unraid's `nobody:users` account so it can write there. Unraid updates the container from the **Docker** page like any other app.
+
+A container already added without the template keeps a blank icon until it is recreated from the template, or until it is updated to an image released after the icon label was added.
+
 ## Configuration
 
 | Variable              | Default                                 | Meaning                                                                            |

@@ -14,7 +14,9 @@ ENV NODE_ENV=production PORT=8080 DATA_DIR=/data ALLOW_INSECURE_HTTP=false
 LABEL org.opencontainers.image.title="Command Table" \
       org.opencontainers.image.description="A Magic life counter for one device or shared rooms" \
       org.opencontainers.image.source="https://github.com/Addison16/commanders-table" \
-      org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
+      org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0" \
+      net.unraid.docker.icon="https://raw.githubusercontent.com/Addison16/command-table/main/public/icon-512.png" \
+      net.unraid.docker.webui="http://[IP]:[PORT:8080]/"
 WORKDIR /app
 RUN mkdir -p /data && chown node:node /data
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
