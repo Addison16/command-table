@@ -45,6 +45,51 @@ export function defaultSetup(count = 4, commander = true): Setup {
     })),
   };
 }
+export const ARCHENEMY_LIFE = 60;
+/**
+ * Archenemy Commander: one seat plays alone against everyone else as a team.
+ * Team players keep the usual 40 life; the archenemy starts at 60 by default.
+ */
+export function archenemySetup(count = 4, archenemySeat = 0): Setup {
+  const setup = defaultSetup(count);
+  setup.settings.preset = 'Archenemy';
+  setup.settings.archenemyLife = ARCHENEMY_LIFE;
+  setup.seats = setup.seats.map((seat, index) => ({ ...seat, archenemy: index === archenemySeat }));
+  return setup;
+}
+export function isArchenemy(game: Game, playerId: string | null | undefined) {
+  return !!game.archenemy && game.archenemy.playerId === playerId;
+}
+/** Players on the other side of the table. Without Archenemy, everyone else is an opponent. */
+export function opponentsOf(game: Game, playerId: string) {
+  if (!game.archenemy) return game.order.filter((id) => id !== playerId);
+  return isArchenemy(game, playerId) ? game.order.filter((id) => id !== playerId) : [game.archenemy.playerId];
+}
+export function teamOf(game: Game) {
+  return game.archenemy ? game.order.filter((id) => id !== game.archenemy!.playerId) : [];
+}
+/** The team wins when the archenemy is out; the archenemy wins when every team member is out. */
+export function archenemyOutcome(game: Game): 'team' | 'archenemy' | null {
+  if (!game.archenemy) return null;
+  if (game.players[game.archenemy.playerId].eliminated) return 'team';
+  const team = teamOf(game);
+  return team.length && team.every((id) => game.players[id].eliminated) ? 'archenemy' : null;
+}
+/** Who can take the next turn. In Archenemy the team shares one turn, recorded on its first active player. */
+export function turnOrder(game: Game) {
+  const active = game.order.filter((id) => !game.players[id].eliminated);
+  if (!game.archenemy) return active;
+  const villain = game.archenemy.playerId;
+  return [active.find((id) => id === villain), active.find((id) => id !== villain)].filter(
+    (id): id is string => !!id,
+  );
+}
+export function isTeamTurn(game: Game) {
+  return !!game.archenemy && !!game.turn.playerId && game.turn.playerId !== game.archenemy.playerId;
+}
+function startingLife(settings: Game['settings'], archenemy: boolean) {
+  return archenemy ? (settings.archenemyLife ?? settings.startingLife) : settings.startingLife;
+}
 export function setupFromGame(game: Game): Setup {
   return {
     settings: structuredClone(game.settings),
@@ -54,6 +99,7 @@ export function setupFromGame(game: Game): Setup {
         name: game.players[id].name,
         color: game.players[id].color,
         commanders: commanders.map((commander) => commander.label),
+        ...(game.archenemy ? { archenemy: isArchenemy(game, id) } : {}),
         ...(commanders.some((commander) => commander.card)
           ? {
               commanderCards: commanders.map((commander) =>
@@ -93,11 +139,16 @@ export function createGame(input: Setup, id: () => string, now: number): Game {
       id: pid,
       name: seat.name,
       color: seat.color,
-      life: setup.settings.startingLife,
+      life: startingLife(setup.settings, !!seat.archenemy),
       poison: 0,
       counters: {},
       eliminated: false,
     };
+    // The archenemy always takes the first turn.
+    if (seat.archenemy) {
+      game.archenemy = { playerId: pid, schemes: 0, ongoing: [] };
+      game.turn = { playerId: pid, number: 1 };
+    }
     for (const [index, label] of seat.commanders.entries()) {
       const cid = id();
       const card = seat.commanderCards?.[index];
@@ -117,6 +168,7 @@ function core(g: Game) {
     settings: g.settings,
     status: g.status,
     endedAt: g.endedAt,
+    archenemy: g.archenemy,
   };
 }
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -197,6 +249,8 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       const targets = c.targetIds.map((id) => {
         const target = g.players[id];
         if (!target) throw new Error('Unknown opponent');
+        if (g.archenemy && !opponentsOf(g, c.casterId).includes(id))
+          throw new Error('Teammates are not opponents in Archenemy. Choose the archenemy.');
         if (target.eliminated) throw new Error('Choose opponents still in the game');
         return target;
       });
@@ -254,10 +308,33 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       else delete commander!.card;
       summary = `Commander renamed to ${c.label}`;
       break;
-    case 'eliminate':
+    case 'eliminate': {
       p!.eliminated = c.eliminated;
       summary = `${p!.name} ${c.eliminated ? 'was eliminated' : 'returned to the game'}`;
+      const outcome = c.eliminated ? archenemyOutcome(g) : null;
+      if (outcome === 'team') summary += '. The team defeated the archenemy!';
+      if (outcome === 'archenemy') summary += '. The archenemy has conquered the team!';
       break;
+    }
+    case 'scheme': {
+      if (!g.archenemy) throw new Error('Schemes are used only in Archenemy games');
+      const villain = g.players[g.archenemy.playerId];
+      if (villain.eliminated) throw new Error('Restore the archenemy before setting schemes in motion');
+      if (c.ongoing && g.archenemy.ongoing.length >= 12)
+        throw new Error('Abandon an ongoing scheme before adding another');
+      g.archenemy.schemes = bounded(g.archenemy.schemes + 1);
+      const name = c.name ?? `Scheme ${g.archenemy.schemes}`;
+      if (c.ongoing) g.archenemy.ongoing.push(name);
+      summary = `${villain.name} set ${name} in motion${c.ongoing ? ' (ongoing)' : ''}`;
+      break;
+    }
+    case 'abandonScheme': {
+      if (!g.archenemy) throw new Error('Schemes are used only in Archenemy games');
+      const [name] = g.archenemy.ongoing.splice(c.index, 1);
+      if (name === undefined) throw new Error('That scheme is no longer ongoing');
+      summary = `${g.players[g.archenemy.playerId].name} abandoned ${name}`;
+      break;
+    }
     case 'marker':
       g.markers[c.marker] = c.playerId;
       summary = `${c.marker}: ${p?.name ?? 'cleared'}`;
@@ -306,7 +383,7 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       g.status = 'active';
       g.endedAt = null;
       for (const player of Object.values(g.players)) {
-        player.life = g.settings.startingLife;
+        player.life = startingLife(g.settings, isArchenemy(g, player.id));
         player.poison = 0;
         player.counters = {};
         player.eliminated = false;
@@ -314,7 +391,8 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       for (const cmdr of Object.values(g.commanders)) cmdr.casts = 0;
       g.damageReceived = {};
       g.markers = { monarch: null, initiative: null };
-      g.turn = { playerId: null, number: 0 };
+      g.turn = g.archenemy ? { playerId: g.archenemy.playerId, number: 1 } : { playerId: null, number: 0 };
+      if (g.archenemy) g.archenemy = { playerId: g.archenemy.playerId, schemes: 0, ongoing: [] };
       g.timer = { startedAt: ctx.now, pausedAt: null, pausedMs: 0 };
       g.rolls = [];
       g.history = [];
@@ -455,9 +533,10 @@ export function makeRoll(
   return roll;
 }
 export function isRelative(c: Command) {
-  return ['adjust', 'damage', 'cast', 'roll'].includes(c.type);
+  return ['adjust', 'damage', 'cast', 'roll', 'scheme'].includes(c.type);
 }
 export function commandSeat(g: Game, c: Command): string | undefined {
+  if (c.type === 'scheme' || c.type === 'abandonScheme') return g.archenemy?.playerId;
   return 'playerId' in c && c.playerId
     ? c.playerId
     : 'commanderId' in c

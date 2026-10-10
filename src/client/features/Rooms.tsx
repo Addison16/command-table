@@ -13,6 +13,7 @@ import { ask, downloadText, Field, Icon, Sheet, Toggle } from '../components/ui.
 import { CommanderInput } from '../components/CommanderInput.js';
 import { PlayerNameInput } from '../components/PlayerNameInput.js';
 import type { CommanderCard } from '../../shared/cards.js';
+import '../styles/archenemy.css';
 export function JoinSheet({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState(new URLSearchParams(location.search).get('join') ?? ''),
     [name, setName] = useState(() => {
@@ -191,7 +192,10 @@ function SeatRequest({ room }: { room: RoomView }) {
       </div>
       {room.seats.map((s) => (
         <div className="lobby-seat" key={s.id}>
-          <span>{s.name}</span>
+          <span>
+            {s.name}
+            {s.archenemy && <small className="role-tag archenemy"> Archenemy</small>}
+          </span>
           <button
             type="submit"
             value={s.id}
@@ -410,6 +414,7 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
                   {room.seats.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
+                      {s.archenemy ? ' · archenemy' : ''}
                       {s.taken ? ' · replace guest' : ''}
                     </option>
                   ))}

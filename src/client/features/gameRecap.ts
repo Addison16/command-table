@@ -17,6 +17,7 @@ export type Recap = {
     commanders: string[];
     eliminated: boolean;
     winner: boolean;
+    archenemy?: boolean;
   }[];
 };
 
@@ -35,13 +36,21 @@ export function createRecap(game: Game, capturedAt: number, result = ''): Recap 
     ? (game.endedAt ?? game.timer.pausedAt ?? game.history.at(-1)?.at ?? game.timer.startedAt)
     : capturedAt;
   const winnerId = final && game.order.includes(result) ? result : null;
+  // In Archenemy the whole team shares a victory.
+  const teamWins = final && result === 'team' && !!game.archenemy;
   return {
     gameId: game.id,
     final,
     preset: game.settings.preset,
     at,
     duration: recapDuration(elapsed(game, at)),
-    result: winnerId ? `${game.players[winnerId].name} wins` : final && result === 'draw' ? 'Draw' : '',
+    result: winnerId
+      ? `${game.players[winnerId].name} wins`
+      : teamWins
+        ? 'The team wins'
+        : final && result === 'draw'
+          ? 'Draw'
+          : '',
     players: game.order.map((id) => ({
       id,
       name: game.players[id].name,
@@ -53,7 +62,8 @@ export function createRecap(game: Game, capturedAt: number, result = ''): Recap 
             .map((commander) => commander.label)
         : [],
       eliminated: game.players[id].eliminated,
-      winner: id === winnerId,
+      winner: id === winnerId || (teamWins && id !== game.archenemy!.playerId),
+      ...(game.archenemy?.playerId === id ? { archenemy: true } : {}),
     })),
   };
 }
@@ -218,7 +228,11 @@ export async function renderRecap(recap: Recap): Promise<Blob> {
     ctx.fillText(recap.final ? 'FINAL LIFE' : 'LIFE', 990, y + 111);
     ctx.fillStyle = player.winner ? gold : muted;
     ctx.font = `600 18px ${bodyFont}`;
-    ctx.fillText(player.winner ? 'WINNER' : player.eliminated ? 'ELIMINATED' : '', 990, y + 148);
+    ctx.fillText(
+      player.winner ? 'WINNER' : player.eliminated ? 'ELIMINATED' : player.archenemy ? 'ARCHENEMY' : '',
+      990,
+      y + 148,
+    );
     ctx.textAlign = 'left';
     y += height + 16;
   }

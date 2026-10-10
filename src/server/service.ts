@@ -156,6 +156,7 @@ export class RoomService {
         id,
         name: game.players[id].name,
         taken: all.some((m) => m.seat_id === id && m.status === 'approved'),
+        ...(game.archenemy?.playerId === id ? { archenemy: true } : {}),
       })),
       commanderEnabled: game.settings.commander,
       locked: !!r.locked,
@@ -450,7 +451,18 @@ export class RoomService {
       );
     if (
       host &&
-      ['marker', 'turn', 'turnTracking', 'timer', 'trackers', 'end', 'reopen', 'rematch'].includes(c.type)
+      [
+        'marker',
+        'turn',
+        'turnTracking',
+        'timer',
+        'trackers',
+        'end',
+        'reopen',
+        'rematch',
+        'scheme',
+        'abandonScheme',
+      ].includes(c.type)
     )
       return;
     // Rolling for the table never sets the turn. Only the host may confirm it.
@@ -459,7 +471,10 @@ export class RoomService {
       numeric = ['adjust', 'set', 'damage', 'damageSet', 'cast', 'castSet'].includes(c.type);
     if (
       seat &&
-      (numeric || ['customize', 'editPlayer', 'commanderName', 'eliminate'].includes(c.type)) &&
+      (numeric ||
+        ['customize', 'editPlayer', 'commanderName', 'eliminate', 'scheme', 'abandonScheme'].includes(
+          c.type,
+        )) &&
       seat === me.seat_id
     )
       return;

@@ -8,13 +8,16 @@ import { useTableLayout } from './useTableLayout.js';
 import { CommanderBackdrop } from '../components/CommanderArtwork.js';
 import type { CommanderCard } from '../../shared/cards.js';
 import { playerStatuses, type PlayerStatus } from './playerStatuses.js';
+import { isTeamTurn } from '../../shared/game.js';
 import '../styles/player-statuses.css';
+import '../styles/archenemy.css';
 
 const PlayerTile = memo(function PlayerTile({
   id,
   index,
   openPlayer,
   openCommander,
+  openSchemes,
   myView,
   autoFlipped = false,
   automatic = false,
@@ -24,6 +27,7 @@ const PlayerTile = memo(function PlayerTile({
   index: number;
   openPlayer: (id: string) => void;
   openCommander: (playerId: string, commanderId?: string) => void;
+  openSchemes: () => void;
   myView: boolean;
   autoFlipped?: boolean;
   automatic?: boolean;
@@ -51,7 +55,14 @@ const PlayerTile = memo(function PlayerTile({
         statuses: JSON.stringify(playerStatuses(game, id)),
         monarch: game.markers.monarch === id,
         initiative: game.markers.initiative === id,
-        turn: game.settings.turnTracking && game.turn.playerId === id ? game.turn.number : 0,
+        role: game.archenemy ? (game.archenemy.playerId === id ? 'archenemy' : 'team') : null,
+        // The team shares one turn in Archenemy, so every team seat shows it.
+        turn:
+          game.settings.turnTracking &&
+          (game.turn.playerId === id ||
+            (isTeamTurn(game) && game.archenemy?.playerId !== id && !seat.eliminated))
+            ? game.turn.number
+            : 0,
         presence: member ? Boolean(member.connected) : null,
         artwork: JSON.stringify(
           Object.values(game.commanders)
@@ -81,8 +92,9 @@ const PlayerTile = memo(function PlayerTile({
   const chars = String(player.life).length;
   return (
     <section
-      className={`player-tile ${player.color} ${player.eliminated ? 'eliminated' : ''} ${player.turn ? 'active-turn' : ''}`}
-      aria-label={`${player.name} seat`}
+      className={`player-tile ${player.color} ${player.eliminated ? 'eliminated' : ''} ${player.turn ? 'active-turn' : ''} ${player.role === 'archenemy' ? 'archenemy' : ''}`}
+      data-role={player.role ?? undefined}
+      aria-label={`${player.name}${player.role === 'archenemy' ? ' (archenemy)' : ''} seat`}
       data-player-id={id}
       style={span ? ({ '--seat-span': span } as CSSProperties) : undefined}
     >
@@ -99,6 +111,12 @@ const PlayerTile = memo(function PlayerTile({
         >
           <span className="seat-index">{String(index + 1).padStart(2, '0')}</span>
           <span className="player-name">{player.name}</span>
+          {player.role === 'archenemy' && (
+            // A compact mark keeps long names readable; the seat label and border say the rest.
+            <span className="archenemy-mark" title="Archenemy" role="img" aria-label="Archenemy">
+              <Icon name="scheme" size={13} />
+            </span>
+          )}
           {player.presence !== null && (
             <span
               className={`presence-dot ${player.presence ? 'online' : ''}`}
@@ -141,6 +159,10 @@ const PlayerTile = memo(function PlayerTile({
           <div className="player-statuses" role="group" aria-label="Player status">
             {statuses.map((status) => {
               const Tag = status.kind === 'poison' ? 'span' : 'button';
+              const action =
+                status.kind === 'scheme'
+                  ? 'open the scheme deck'
+                  : `open commander ${status.kind === 'tax' ? 'tax' : 'damage'}`;
               return (
                 <Tag
                   className={`status-chip ${status.warning ? 'is-warning' : ''}`}
@@ -148,12 +170,14 @@ const PlayerTile = memo(function PlayerTile({
                   data-key={status.key}
                   key={status.key}
                   role={status.kind === 'poison' ? 'img' : undefined}
-                  aria-label={`${status.kind === 'poison' ? '' : `${player.name}: open commander ${status.kind === 'tax' ? 'tax' : 'damage'}. `}${status.warning ? 'Warning. ' : ''}${status.description}`}
+                  aria-label={`${status.kind === 'poison' ? '' : `${player.name}: ${action}. `}${status.warning ? 'Warning. ' : ''}${status.description}`}
                   aria-haspopup={status.kind === 'poison' ? undefined : 'dialog'}
                   onClick={
                     status.kind === 'poison'
                       ? undefined
-                      : () => openCommander(id, status.kind === 'tax' ? status.key.slice(4) : undefined)
+                      : status.kind === 'scheme'
+                        ? openSchemes
+                        : () => openCommander(id, status.kind === 'tax' ? status.key.slice(4) : undefined)
                   }
                   title={status.description}
                 >
@@ -200,7 +224,11 @@ const PlayerTile = memo(function PlayerTile({
                 ◆
               </span>
             )}
-            {player.turn > 0 && <span>TURN {player.turn}</span>}
+            {player.turn > 0 && (
+              <span>
+                {player.role === 'team' ? 'TEAM ' : ''}TURN {player.turn}
+              </span>
+            )}
           </span>
         </div>
       </div>
@@ -210,9 +238,11 @@ const PlayerTile = memo(function PlayerTile({
 export function Board({
   openPlayer,
   openCommander,
+  openSchemes,
 }: {
   openPlayer: (id: string) => void;
   openCommander: (playerId: string, commanderId?: string) => void;
+  openSchemes: () => void;
 }) {
   const game = useApp((s) => s.game)!,
     profile = useApp((s) => s.profile),
@@ -247,6 +277,7 @@ export function Board({
             index={game.order.indexOf(seat!)}
             openPlayer={openPlayer}
             openCommander={openCommander}
+            openSchemes={openSchemes}
             myView
           />
           <div className="seat-overview">
@@ -277,6 +308,7 @@ export function Board({
               index={i}
               openPlayer={openPlayer}
               openCommander={openCommander}
+              openSchemes={openSchemes}
               myView={false}
               autoFlipped={facesAcross(layout, i, game.order.length)}
               automatic={automatic}

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { defaultSetup } from '../../shared/game.js';
+import { ARCHENEMY_LIFE, defaultSetup } from '../../shared/game.js';
 import { palettes, setupSchema, type Setup } from '../../shared/schema.js';
 import { useApp, report, startLocal, updateProfile } from '../app/store.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { CommanderInput } from '../components/CommanderInput.js';
 import { PlayerNameInput } from '../components/PlayerNameInput.js';
+import '../styles/archenemy.css';
 export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose: () => void }) {
   const [setup, setSetup] = useState<Setup>(() => {
     const initial = defaultSetup();
@@ -17,19 +18,39 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
     return /^(?:Host|Player(?: [1-8])?)$/.test(saved) ? '' : saved;
   });
   const settings = setup.settings;
+  const archenemyMode = settings.preset === 'Archenemy';
+  const archenemySeat = setup.seats.findIndex((seat) => seat.archenemy);
+  const chooseArchenemy = (index: number) =>
+    setSetup((s) => ({ ...s, seats: s.seats.map((seat, i) => ({ ...seat, archenemy: i === index })) }));
   const change = (patch: Partial<Setup['settings']>) =>
     setSetup((s) => ({ ...s, settings: { ...s.settings, ...patch } }));
   const count = (n: number) =>
-    setSetup((s) => ({
-      ...s,
-      seats: Array.from({ length: n }, (_, i) => s.seats[i] ?? defaultSetup(8).seats[i]),
-    }));
+    setSetup((s) => {
+      const seats = Array.from({ length: n }, (_, i) => s.seats[i] ?? defaultSetup(8).seats[i]);
+      // Keep exactly one archenemy when the chosen seat leaves the table.
+      if (s.settings.preset === 'Archenemy' && !seats.some((seat) => seat.archenemy))
+        seats[0] = { ...seats[0], archenemy: true };
+      return { ...s, seats };
+    });
   const preset = (value: Setup['settings']['preset']) =>
-    change({
-      preset: value,
-      ...(value === 'Custom'
-        ? {}
-        : { startingLife: value === 'Commander' ? 40 : 20, commander: value === 'Commander' }),
+    setSetup((s) => {
+      const archenemy = value === 'Archenemy';
+      const settings: Setup['settings'] = {
+        ...s.settings,
+        preset: value,
+        ...(value === 'Custom'
+          ? {}
+          : { startingLife: value === '20-life game' ? 20 : 40, commander: value !== '20-life game' }),
+      };
+      if (archenemy) settings.archenemyLife = s.settings.archenemyLife ?? ARCHENEMY_LIFE;
+      else delete settings.archenemyLife;
+      // Seat 1 starts as the archenemy; choose someone else below.
+      const seats = (archenemy && s.seats.length < 2 ? defaultSetup(4).seats : s.seats).map((seat, index) => {
+        const team = { ...seat };
+        delete team.archenemy;
+        return archenemy ? { ...team, archenemy: index === 0 } : team;
+      });
+      return { settings, seats };
     });
   const submit = async () => {
     setBusy(true);
@@ -82,6 +103,7 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
               type="button"
               className={setup.seats.length === i + 1 ? 'selected' : ''}
               aria-pressed={setup.seats.length === i + 1}
+              disabled={archenemyMode && i === 0}
               onClick={() => count(i + 1)}
             >
               {i + 1}
@@ -95,10 +117,49 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
           >
             <option>Commander</option>
             <option>20-life game</option>
+            <option>Archenemy</option>
             <option>Custom</option>
           </select>
         </Field>
-        <Field label="Starting life">
+        {archenemyMode && (
+          <fieldset className="archenemy-setup">
+            <legend>Who is the archenemy?</legend>
+            <p className="hint">
+              One player schemes alone with a scheme deck and takes the first turn. Everyone else is a team:
+              they share one turn and win together when the archenemy falls.
+            </p>
+            <div className="archenemy-choices" role="group" aria-label="Archenemy seat">
+              {setup.seats.map((seat, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`archenemy-choice ${seat.color} ${archenemySeat === i ? 'selected' : ''}`}
+                  aria-pressed={archenemySeat === i}
+                  onClick={() => chooseArchenemy(i)}
+                >
+                  <span className={`palette-dot ${seat.color}`} />
+                  {mode === 'room'
+                    ? i === 0
+                      ? 'You'
+                      : `Seat ${i + 1}`
+                    : seat.name.trim() || `Player ${i + 1}`}
+                </button>
+              ))}
+            </div>
+            <Field label="Archenemy starting life" hint="Default 60. The team uses the starting life below.">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={-999999}
+                max={999999}
+                required
+                value={settings.archenemyLife ?? ARCHENEMY_LIFE}
+                onChange={(e) => change({ archenemyLife: e.target.valueAsNumber })}
+              />
+            </Field>
+          </fieldset>
+        )}
+        <Field label={archenemyMode ? 'Team starting life' : 'Starting life'}>
           <input
             type="number"
             inputMode="numeric"

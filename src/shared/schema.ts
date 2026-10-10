@@ -17,7 +17,7 @@ const int = z.number().int().min(0).max(LIMIT);
 const life = z.number().int().min(-LIMIT).max(LIMIT);
 export const settingsSchema = z
   .strictObject({
-    preset: z.enum(['Commander', '20-life game', 'Custom']),
+    preset: z.enum(['Commander', '20-life game', 'Archenemy', 'Custom']),
     startingLife: life,
     poison: z.boolean(),
     commander: z.boolean(),
@@ -26,8 +26,11 @@ export const settingsSchema = z
     commanderThreshold: int.min(1),
     counters: z.array(counterKey).max(12),
     markerTrackers: z.array(z.enum(['monarch', 'initiative'])).max(2),
+    /** Present only in Archenemy games: the lone villain's starting life. */
+    archenemyLife: life.optional(),
   })
   .strict();
+export const schemeNameSchema = z.string().trim().min(1).max(60);
 export const setupSchema = z
   .strictObject({
     settings: settingsSchema,
@@ -39,6 +42,7 @@ export const setupSchema = z
             color: z.enum(palettes),
             commanders: z.array(commanderNameSchema).min(1).max(2),
             commanderCards: z.array(commanderCardSchema.nullable()).min(1).max(2).optional(),
+            archenemy: z.boolean().optional(),
           })
           .strict()
           .refine((seat) => !seat.commanderCards || seat.commanderCards.length === seat.commanders.length, {
@@ -49,7 +53,18 @@ export const setupSchema = z
       .min(1)
       .max(8),
   })
-  .strict();
+  .strict()
+  .superRefine((setup, ctx) => {
+    const villains = setup.seats.filter((seat) => seat.archenemy).length;
+    if (villains > 1)
+      ctx.addIssue({ code: 'custom', message: 'Choose only one archenemy.', path: ['seats'] });
+    if (villains && setup.seats.length < 2)
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Archenemy needs at least two players: the archenemy and a team.',
+        path: ['seats'],
+      });
+  });
 export type Setup = z.infer<typeof setupSchema>;
 export const playerSchema = z
   .strictObject({
@@ -137,6 +152,14 @@ export const gameSchema = z
     history: z.array(historySchema).max(200),
     undo: z.array(frameSchema).max(60),
     redo: z.array(frameSchema).max(60),
+    /** Archenemy games only. One seat plays alone against everyone else as a team. */
+    archenemy: z
+      .strictObject({
+        playerId: idSchema,
+        schemes: int,
+        ongoing: z.array(schemeNameSchema).max(12),
+      })
+      .optional(),
   })
   .strict()
   .superRefine((g, ctx) => {
@@ -161,6 +184,7 @@ export const gameSchema = z
       invalid('Invalid marker or turn');
     if (g.rolls.some((roll) => roll.playerId && !g.players[roll.playerId]))
       invalid('Invalid dice player reference');
+    if (g.archenemy && !g.players[g.archenemy.playerId]) invalid('Invalid archenemy');
     const roots = [
       'players',
       'commanders',
@@ -171,6 +195,7 @@ export const gameSchema = z
       'settings',
       'status',
       'endedAt',
+      'archenemy',
     ];
     if ([...g.undo, ...g.redo].some((f) => f.changes.some((c) => !roots.includes(c.path[0]))))
       invalid('Invalid undo fields');
@@ -241,6 +266,12 @@ export const commandSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({ type: z.literal('turn'), playerId: idSchema.nullable(), advance: z.boolean() }),
   z.strictObject({ type: z.literal('turnTracking'), enabled: z.boolean() }),
+  z.strictObject({
+    type: z.literal('scheme'),
+    name: schemeNameSchema.optional(),
+    ongoing: z.boolean(),
+  }),
+  z.strictObject({ type: z.literal('abandonScheme'), index: z.number().int().min(0).max(11) }),
   z.strictObject({ type: z.literal('timer'), action: z.enum(['pause', 'resume']) }),
   z.strictObject({
     type: z.literal('trackers'),
@@ -333,7 +364,7 @@ export type RoomView = {
   hostId: string;
   me: Member;
   members: Member[];
-  seats: { id: string; name: string; taken: boolean }[];
+  seats: { id: string; name: string; taken: boolean; archenemy?: boolean }[];
   commanderEnabled?: boolean;
   locked: boolean;
   everyoneEdits: boolean;
