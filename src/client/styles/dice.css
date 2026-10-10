@@ -202,109 +202,6 @@
     max-width: 45%;
     overflow-wrap: anywhere;
   }
-  .new-game-modes {
-    display: grid;
-    gap: 14px;
-  }
-  .new-game-modes > button {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 24px 16px;
-  }
-  .new-game-modes strong {
-    font-size: 18px;
-  }
-  .new-game-modes span {
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .recent-games {
-    width: 100%;
-    max-width: 720px;
-    margin: 32px auto 0;
-    text-align: left;
-  }
-  .recent-heading {
-    margin-bottom: 14px;
-  }
-  .recent-heading h2 {
-    font:
-      500 29px 'Cormorant Garamond',
-      serif;
-    margin: 0 0 6px;
-  }
-  .recent-heading p {
-    color: var(--muted);
-    font-size: 12px;
-    margin: 0;
-  }
-  .recent-game-list {
-    display: grid;
-    gap: 8px;
-  }
-  .recent-game {
-    width: 100%;
-    min-width: 0;
-    gap: 12px;
-    padding: 16px 12px;
-    text-align: left;
-    background: var(--surface);
-    border-color: var(--line);
-  }
-  .recent-game > svg {
-    color: var(--gold);
-    flex-shrink: 0;
-  }
-  .recent-game-copy {
-    display: grid;
-    flex: 1;
-    gap: 5px;
-    min-width: 0;
-  }
-  .recent-game-copy strong {
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .recent-game-copy small {
-    color: var(--muted);
-    font-size: 10px;
-    font-weight: 400;
-  }
-  .recent-resume {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-    font-size: 11px;
-    color: var(--gold);
-  }
-  .edit-player {
-    margin: 0 0 20px;
-    padding: 0 14px;
-    border: 1px solid var(--accent-line);
-    border-radius: 12px;
-    background: var(--accent-soft);
-  }
-  .edit-player summary {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 10px;
-    color: var(--gold);
-  }
-  .edit-player summary::after {
-    content: '+';
-    margin-left: auto;
-    font-size: 20px;
-  }
-  .edit-player[open] summary::after {
-    content: '−';
-  }
-  .edit-player form {
-    padding-bottom: 14px;
-  }
 }
 @layer responsive {
   @media (max-height: 500px) and (orientation: landscape) {
@@ -327,13 +224,6 @@
     }
   }
   @media (max-width: 359px) {
-    .recent-game {
-      gap: 8px;
-      padding: 12px 8px;
-    }
-    .recent-resume {
-      font-size: 10px;
-    }
     .dice-scorecard.revealed {
       padding: 12px;
     }
