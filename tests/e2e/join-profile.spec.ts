@@ -177,3 +177,26 @@ test('joining a 20-life room uses the chosen name without asking for commanders'
     await context.close();
   }
 });
+
+test('tapping a button while commander suggestions are open still presses it', async ({
+  page: host,
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await context.route('**/api/cards/suggest**', (route) =>
+    route.fulfill({ json: { names: Array.from({ length: 8 }, (_, i) => `Kraum Option ${i}`) } }),
+  );
+  const guest = await context.newPage();
+  // Closing the list on press used to move the button before the click landed.
+  const room = await createRoom(host);
+  await host.getByRole('button', { name: 'Live room', exact: true }).click();
+  await join(guest, room.joinUrl!, 'Alex');
+  await guest.getByLabel('Commander 1 name', { exact: true }).fill('Tymna');
+  await guest.getByRole('button', { name: 'Request seat', exact: true }).first().click();
+  await expect(host.locator('.seat-request-preview')).toContainText('Tymna');
+  await guest.getByLabel('Commander 1 name', { exact: true }).fill('Kraum');
+  await expect(guest.getByRole('button', { name: 'Kraum Option 0' })).toBeVisible();
+  await guest.getByRole('button', { name: 'Update request', exact: true }).click();
+  await expect(host.locator('.seat-request-preview')).toContainText('Kraum');
+  await context.close();
+});
