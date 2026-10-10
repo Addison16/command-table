@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { elapsed } from '../../shared/game.js';
+import { elapsed, isArchenemy, isTeamTurn, turnOrder } from '../../shared/game.js';
 import { type Command, type Roll } from '../../shared/schema.js';
 import { act, isHost, useApp, takeOver, report } from '../app/store.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
@@ -221,11 +221,18 @@ export function Utilities({
               onChange={(e) => void act({ type: 'turn', playerId: e.target.value || null, advance: false })}
             >
               <option value="">Choose a player</option>
-              {eligible.map((id) => (
+              {turnOrder(game).map((id) => (
                 <option key={id} value={id}>
-                  {game.players[id].name}
+                  {isArchenemy(game, id)
+                    ? `${game.players[id].name} · Archenemy`
+                    : game.archenemy
+                      ? 'The team'
+                      : game.players[id].name}
                 </option>
               ))}
+              {isTeamTurn(game) && !turnOrder(game).includes(game.turn.playerId!) && (
+                <option value={game.turn.playerId!}>The team</option>
+              )}
             </select>
           </Field>
         )}

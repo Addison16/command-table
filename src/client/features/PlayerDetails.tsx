@@ -131,7 +131,11 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
       description={
         mode === 'room' && !canEdit(playerId)
           ? 'View this player’s information and commanders. Each player controls their own seat.'
-          : 'Your life, your legends, your next move.'
+          : game.archenemy?.playerId === playerId
+            ? 'The archenemy. You scheme alone against the whole table.'
+            : game.archenemy
+              ? 'On the team. Your teammates share your turn and your victory.'
+              : 'Your life, your legends, your next move.'
       }
       onClose={onClose}
     >

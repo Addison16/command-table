@@ -107,9 +107,11 @@ export function GameRecapSheet({
           >
             <option value="">Leave result off</option>
             <option value="draw">Draw</option>
+            {game.archenemy && <option value="team">The team wins</option>}
             {recap.players.map((player) => (
               <option key={player.id} value={player.id}>
-                {player.name} wins
+                {player.name}
+                {player.archenemy ? ' (archenemy)' : ''} wins
               </option>
             ))}
           </select>

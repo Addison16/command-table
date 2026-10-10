@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LIMIT } from '../../shared/schema.js';
+import { isArchenemy, opponentsOf } from '../../shared/game.js';
 import { notify, saveGroupLife, useApp } from '../app/store.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import '../styles/group-life.css';
@@ -51,7 +52,7 @@ export function GroupLife({ onClose }: { onClose: () => void }) {
   const valid = available && participantsValid && amountsValid && withinBounds && !needsReview;
   const changeCaster = (id: string) => {
     setCasterId(id);
-    setTargetIds(game.order.filter((playerId) => playerId !== id && !game.players[playerId].eliminated));
+    setTargetIds(opponentsOf(game, id).filter((playerId) => !game.players[playerId].eliminated));
     // A gain entered for the previous caster must never transfer by accident.
     setGainEnabled(false);
     setGainText('0');
@@ -120,32 +121,35 @@ export function GroupLife({ onClose }: { onClose: () => void }) {
         {caster && (
           <fieldset className="group-life-targets" disabled={saving}>
             <legend>Opponents affected</legend>
-            {game.order
-              .filter((id) => id !== casterId)
-              .map((id) => {
-                const player = game.players[id];
-                return (
-                  <label className={`group-life-target ${player.color}`} key={id}>
-                    <input
-                      type="checkbox"
-                      checked={targetIds.includes(id)}
-                      disabled={player.eliminated && !targetIds.includes(id)}
-                      onChange={(event) =>
-                        setTargetIds((current) =>
-                          event.target.checked ? [...current, id] : current.filter((target) => target !== id),
-                        )
-                      }
-                    />
-                    <span>
-                      {player.name}
-                      <small>
-                        {player.eliminated ? 'Eliminated · remove from this effect' : `${player.life} life`}
-                      </small>
-                    </span>
-                  </label>
-                );
-              })}
+            {opponentsOf(game, casterId).map((id) => {
+              const player = game.players[id];
+              return (
+                <label className={`group-life-target ${player.color}`} key={id}>
+                  <input
+                    type="checkbox"
+                    checked={targetIds.includes(id)}
+                    disabled={player.eliminated && !targetIds.includes(id)}
+                    onChange={(event) =>
+                      setTargetIds((current) =>
+                        event.target.checked ? [...current, id] : current.filter((target) => target !== id),
+                      )
+                    }
+                  />
+                  <span>
+                    {player.name}
+                    <small>
+                      {player.eliminated ? 'Eliminated · remove from this effect' : `${player.life} life`}
+                    </small>
+                  </span>
+                </label>
+              );
+            })}
             {game.order.length < 2 && <p className="hint">This game has no opponents.</p>}
+            {game.archenemy && !isArchenemy(game, casterId) && (
+              <p className="hint">
+                In Archenemy, teammates are not opponents. Only the archenemy can lose life here.
+              </p>
+            )}
           </fieldset>
         )}
         <Field label="Life lost per selected opponent">

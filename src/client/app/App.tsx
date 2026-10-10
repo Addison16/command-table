@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { defaultSetup } from '../../shared/game.js';
+import { archenemyOutcome, defaultSetup, teamOf, turnOrder } from '../../shared/game.js';
 import { canUndoRoomAction } from '../../shared/permissions.js';
 import { type Game, type Roll } from '../../shared/schema.js';
 import {
@@ -23,6 +23,7 @@ import { PlayerDetails } from '../features/PlayerDetails.js';
 import { CommanderQuick } from '../features/CommanderQuick.js';
 import { Utilities } from '../features/Utilities.js';
 import { GroupLife } from '../features/GroupLife.js';
+import { SchemeDeck } from '../features/SchemeDeck.js';
 import { GameMenu, HistorySheet } from '../features/GameMenu.js';
 import { Settings, Enhancements, PwaUpdates } from '../features/Settings.js';
 import { JoinSheet, RoomSheet, Lobby } from '../features/Rooms.js';
@@ -67,6 +68,7 @@ export function App() {
     },
     [open],
   );
+  const openSchemes = useCallback(() => open('schemes'), [open]);
   const close = useCallback(() => {
     if (history.state?.mtgSheet === sheetKey.current) history.back();
     else setSheet(null);
@@ -132,7 +134,8 @@ export function App() {
     setPresentation(undefined);
     void openHome().catch(report);
   }, [state.ready, state.confirmed]);
-  const eligible = game?.order.filter((id) => !game.players[id].eliminated) ?? [];
+  const eligible = game ? turnOrder(game) : [];
+  const outcome = game ? archenemyOutcome(game) : null;
   const canUndo =
     game &&
     game.undo.length > 0 &&
@@ -342,8 +345,19 @@ export function App() {
         {state.screen === 'board' && game && (
           <>
             <div className="board-topline">
-              <span>
-                {game.order.length === 1 ? 'PRACTICE TABLE' : `${game.order.length} PLAYERS AT THE TABLE`}
+              <span
+                className={outcome ? 'archenemy-outcome' : undefined}
+                role={outcome ? 'status' : undefined}
+              >
+                {outcome === 'team'
+                  ? 'THE TEAM DEFEATED THE ARCHENEMY'
+                  : outcome === 'archenemy'
+                    ? 'THE ARCHENEMY CONQUERED THE TEAM'
+                    : game.archenemy
+                      ? `ARCHENEMY · 1 VS ${teamOf(game).length}`
+                      : game.order.length === 1
+                        ? 'PRACTICE TABLE'
+                        : `${game.order.length} PLAYERS AT THE TABLE`}
               </span>
               <span className="awake-indicator">☀ Screen awake</span>
               <span>
@@ -356,7 +370,7 @@ export function App() {
                       : 'MAY YOUR DRAWS BE KIND'}
               </span>
             </div>
-            <Board openPlayer={openPlayer} openCommander={openCommander} />
+            <Board openPlayer={openPlayer} openCommander={openCommander} openSchemes={openSchemes} />
             <nav className="table-toolbar" aria-label="Game controls">
               <button onClick={() => open('utilities')}>
                 <Icon name="dice" />
@@ -459,6 +473,7 @@ export function App() {
         />
       )}
       {sheet === 'group-life' && game && <GroupLife key={game.id} onClose={close} />}
+      {sheet === 'schemes' && game?.archenemy && <SchemeDeck onClose={close} />}
       {sheet === 'menu' && game && <GameMenu onClose={close} open={open} />}
       {sheet === 'history' && game && <HistorySheet onClose={close} />}
       {sheet === 'settings' && <Settings onClose={close} />}

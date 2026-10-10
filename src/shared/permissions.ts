@@ -8,6 +8,7 @@ export function canUndoRoomAction(game: Game, memberId: string, seatId: string |
     const [root, id] = path;
     if (root === 'players' || root === 'damageReceived') return !!seatId && id === seatId;
     if (root === 'commanders') return !!seatId && game.commanders[id]?.ownerId === seatId;
+    if (root === 'archenemy') return (!!seatId && game.archenemy?.playerId === seatId) || host;
     return host && ['markers', 'turn', 'timer', 'settings', 'status', 'endedAt'].includes(root);
   });
 }

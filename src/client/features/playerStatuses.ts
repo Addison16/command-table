@@ -1,7 +1,7 @@
 import type { Game } from '../../shared/schema.js';
 
 export type PlayerStatus = {
-  kind: 'commander-damage' | 'poison' | 'tax';
+  kind: 'commander-damage' | 'poison' | 'tax' | 'scheme';
   key: string;
   label: string;
   value: string;
@@ -14,6 +14,17 @@ export function playerStatuses(game: Game, playerId: string): PlayerStatus[] {
   const player = game.players[playerId];
   if (!player) return [];
   const statuses: PlayerStatus[] = [];
+  if (game.archenemy?.playerId === playerId) {
+    const { schemes, ongoing } = game.archenemy;
+    statuses.push({
+      kind: 'scheme',
+      key: 'scheme',
+      label: ongoing.length ? `ARCHENEMY · ${ongoing.length} ONGOING` : 'ARCHENEMY · SCHEMES',
+      value: String(schemes),
+      description: `${schemes} ${schemes === 1 ? 'scheme' : 'schemes'} set in motion.${ongoing.length ? ` Ongoing: ${ongoing.join(', ')}.` : ''}`,
+      warning: false,
+    });
+  }
   const commanders = Object.values(game.commanders);
   if (game.settings.commander) {
     const received = commanders
