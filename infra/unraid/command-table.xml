@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>CommandTable</Name>
+  <Repository>ghcr.io/addison16/commandtable:latest</Repository>
+  <Registry>https://github.com/Addison16/command-table/pkgs/container/commandtable</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Addison16/command-table/issues</Support>
+  <Project>https://github.com/Addison16/command-table</Project>
+  <Overview>A Magic life counter for one device or shared rooms. Track one to eight players on a single phone, or create a shared room and invite friends by code, link or QR. Players join in a browser with no accounts. Shared games are kept in the Data folder.</Overview>
+  <Category>GameServers: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Addison16/command-table/main/infra/unraid/command-table.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Addison16/command-table/main/public/icon-512.png</Icon>
+  <ExtraParams>--init --user 99:100</ExtraParams>
+  <Config Name="App address" Target="PUBLIC_ORIGIN" Default="" Mode="" Description="The exact address every phone will open, including the port, for example http://192.168.1.50:8080 or https://table.example.com." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Allow plain HTTP" Target="ALLOW_INSECURE_HTTP" Default="true" Mode="" Description="Leave true for an http:// address on your home network. Set to false when App address is https://." Type="Variable" Display="always" Required="true" Mask="false">true</Config>
+  <Config Name="Web port" Target="8080" Default="8080" Mode="tcp" Description="Port for the web interface." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/command-table" Mode="rw" Description="Shared rooms and guest sessions (SQLite). Keep this on a cache or array disk, not a network share." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/command-table</Config>
+  <Config Name="Trusted proxy hops" Target="TRUST_PROXY_HOPS" Default="0" Mode="" Description="Set to 1 when a reverse proxy sits in front of Command Table." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
+</Container>

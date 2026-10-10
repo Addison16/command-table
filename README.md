@@ -50,6 +50,8 @@ Compose handles the download, configuration and persistent storage together. The
 
 The primary Docker image name is **`commandtable`**. The source repository remains `Addison16/commanders-table`. The existing `ghcr.io/addison16/commanders-table` image will be kept as a compatibility alias, and future releases will be published to both names.
 
+On Unraid, add Command Table from its template instead so it shows its icon on the **Docker** page; see [Unraid](docs/deployment.md#unraid).
+
 For public access or installable/offline phone support, configure HTTPS and `ALLOW_INSECURE_HTTP=false` using the [Docker deployment guide](docs/deployment.md#https-through-a-proxy). Keep the chosen address stable so browser saves and guest sessions stay associated with it.
 
 ### Update
