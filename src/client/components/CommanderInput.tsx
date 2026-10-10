@@ -22,6 +22,22 @@ async function requestCards(path: string, signal: AbortSignal): Promise<unknown>
   return body;
 }
 
+let pressing = false;
+const pressEnded: (() => void)[] = [];
+if (typeof window !== 'undefined') {
+  addEventListener('pointerdown', () => (pressing = true), true);
+  for (const type of ['pointerup', 'pointercancel'])
+    addEventListener(type, () => {
+      pressing = false;
+      // Run after the click that follows this pointerup has been dispatched.
+      const callbacks = pressEnded.splice(0);
+      if (callbacks.length) setTimeout(() => callbacks.forEach((callback) => callback()));
+    });
+}
+function afterPress(callback: () => void) {
+  if (pressing) pressEnded.push(callback);
+  else callback();
+}
 export function CommanderInput({
   label,
   value,
@@ -201,7 +217,11 @@ export function CommanderInput({
       className="commander-input"
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        // Tapping a button below an open suggestion list blurs the field on
+        // press. Closing the list then would shift that button out from under
+        // the finger before the click lands, so wait for the press to finish.
+        afterPress(() => setFocused(false));
       }}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && names.length) {
