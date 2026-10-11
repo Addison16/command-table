@@ -176,6 +176,25 @@ test('commander artwork saves and reloads without changing life, and can be remo
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByText('Changes saved.', { exact: true })).toBeVisible();
   await expect(page.locator('.commander-credits')).toContainText(cards[0].artist);
+  const framing = page.getByRole('slider', {
+    name: `${cards[0].name} artwork vertical position`,
+    exact: true,
+  });
+  await framing.focus();
+  await framing.press('End');
+  await expect(framing).toHaveValue('100');
+  await expect(page.locator('.artwork-framing-preview img').first()).toHaveCSS('object-position', '50% 100%');
+  const horizontal = page.getByRole('slider', {
+    name: `${cards[0].name} artwork horizontal position`,
+    exact: true,
+  });
+  await horizontal.focus();
+  await horizontal.press('End');
+  await expect(horizontal).toHaveValue('100');
+  await expect(page.locator('.artwork-framing-preview img').first()).toHaveCSS(
+    'object-position',
+    '100% 100%',
+  );
   await audit(page);
   await page.getByRole('button', { name: 'Close Rowan', exact: true }).click();
   const image = page.locator('.player-tile').first().locator('.commander-backdrop img');
@@ -196,6 +215,8 @@ test('commander artwork saves and reloads without changing life, and can be remo
     .poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth))
     .toBeGreaterThan(0);
   await openPlayerEditor(page, 'Rowan');
+  await expect(framing).toHaveValue('100');
+  await expect(horizontal).toHaveValue('100');
   await expect(page.getByRole('combobox', { name: 'Player color', exact: true })).toHaveValue('teal');
   await page.getByLabel('Commander 1 name', { exact: true }).fill('My custom commander');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();

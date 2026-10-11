@@ -33,6 +33,74 @@ function roomView(): RoomView {
 }
 
 describe('local transactions and recovery', () => {
+  it('upgrades a saved artwork crop and bounds framing preferences without touching the game', async () => {
+    const repository = new Repository('a', newId());
+    await repository.open();
+    const profile = await repository.profile(),
+      card = newId();
+    await repository.put('profile', { ...profile, artPositions: { [card]: 75 } });
+    expect((await repository.profile()).artPositions[card]).toEqual({ x: 50, y: 75 });
+    const positions = Object.fromEntries(Array.from({ length: 70 }, () => [newId(), { x: 20, y: 80 }]));
+    await repository.put('profile', { ...profile, artPositions: positions });
+    const saved = await repository.profile();
+    expect(Object.keys(saved.artPositions)).toHaveLength(64);
+    expect(saved.installationId).toBe(profile.installationId);
+    expect(await repository.get('active')).toBeUndefined();
+    repository.db?.close();
+  });
+  it('persists gameplay once while duplicate, presence and clock updates keep their live values', async () => {
+    const repository = new Repository('a', newId());
+    await repository.open();
+    const view = roomView();
+    const writes = vi.spyOn(IDBObjectStore.prototype, 'put');
+    try {
+      await repository.saveRoom(view);
+      await repository.saveRoom({
+        ...view,
+        serverTime: view.serverTime + 10,
+        members: view.members.map((m) => ({ ...m, connected: true })),
+      });
+      expect(writes.mock.calls.filter(([, key]) => key === `room:${view.id}`)).toHaveLength(1);
+      const fresh = structuredClone(view);
+      fresh.revision++;
+      fresh.game!.revision++;
+      fresh.game!.players[fresh.game!.order[0]].life = 17;
+      await repository.saveRoom(fresh);
+      expect(
+        (await repository.get<RoomView>(`room:${view.id}`))!.game!.players[fresh.game!.order[0]].life,
+      ).toBe(17);
+      expect(writes.mock.calls.filter(([, key]) => key === `room:${view.id}`)).toHaveLength(2);
+    } finally {
+      writes.mockRestore();
+    }
+  });
+
+  it('bounds old room snapshots while retaining every unresolved operation', async () => {
+    const repository = new Repository('a', newId());
+    await repository.open();
+    const protectedRoom = roomView();
+    await repository.saveRoom(protectedRoom);
+    const envelope = {
+      protocolVersion: 1 as const,
+      roomId: protectedRoom.id,
+      gameId: protectedRoom.gameId,
+      operationId: newId(),
+      baseRevision: protectedRoom.revision,
+      command: { type: 'adjust' as const, playerId: protectedRoom.game!.order[0], field: 'life', delta: -1 },
+    };
+    await repository.savePending(protectedRoom.id, [envelope]);
+    const evictedRoom = roomView();
+    await repository.saveRoom(evictedRoom);
+    for (let i = 0; i < 12; i++) await repository.saveRoom(roomView());
+    expect(await repository.recentRooms()).toHaveLength(10);
+    expect(await repository.get(`room:${evictedRoom.id}`)).toBeUndefined();
+    expect(await repository.get(`room:${protectedRoom.id}`)).toEqual(protectedRoom);
+    expect(await repository.pending(protectedRoom.id)).toEqual([envelope]);
+    await repository.savePending(protectedRoom.id, []);
+    await repository.saveRoom(roomView());
+    expect(await repository.get(`room:${protectedRoom.id}`)).toBeUndefined();
+  });
+
   it('handles an aborted save without leaking a rejection or partially committing, then retries', async () => {
     const repository = new Repository('a', newId());
     await repository.open();

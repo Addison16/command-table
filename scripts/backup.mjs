@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { existsSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { loadEnvFile } from 'node:process';
 if (existsSync('.env')) loadEnvFile('.env');
@@ -18,9 +18,11 @@ mkdirSync(dirname(destination), { recursive: true });
 const db = new Database(source, { readonly: true, fileMustExist: true });
 try {
   await db.backup(destination);
-  const copy = new Database(destination, { readonly: true });
+  chmodSync(destination, 0o600);
+  const copy = new Database(destination, { fileMustExist: true });
   try {
-    if (copy.pragma('integrity_check', { simple: true }) !== 'ok')
+    copy.pragma('journal_mode = DELETE');
+    if (copy.pragma('integrity_check', { simple: true }) !== 'ok' || copy.pragma('foreign_key_check').length)
       throw new Error('Backup integrity check failed');
   } finally {
     copy.close();

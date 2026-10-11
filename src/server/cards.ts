@@ -361,7 +361,7 @@ export class CardLookupService {
           redirect: 'error',
           headers: {
             Accept: 'application/json',
-            'User-Agent': 'CommandTable/0.1 (+https://github.com/Addison16/commanders-table)',
+            'User-Agent': 'CommandTable (+https://github.com/Addison16/commanders-table)',
           },
           signal: AbortSignal.timeout(Math.min(6000, Math.max(1, deadline - this.now()))),
         });

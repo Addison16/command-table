@@ -9,7 +9,7 @@ export function openDatabase(filename: string) {
   db.pragma('busy_timeout = 5000');
   db.pragma('synchronous = FULL');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 2) {
+  if (version > 3) {
     db.close();
     throw new Error('Database schema is newer than this server. Restore the newer application version.');
   }
@@ -32,6 +32,18 @@ export function openDatabase(filename: string) {
   if (version < 2)
     db.transaction(() => {
       db.exec('ALTER TABLE members ADD COLUMN seat_profile TEXT; PRAGMA user_version = 2;');
+    })();
+  if (version < 3)
+    db.transaction(() => {
+      db.exec(`
+        ALTER TABLE rooms ADD COLUMN retry_floor_revision INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE rooms ADD COLUMN receipt_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE receipts ADD COLUMN base_revision INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX receipts_retention ON receipts(room_id, base_revision);
+        CREATE INDEX snapshots_by_room ON snapshots(room_id);
+        UPDATE rooms SET receipt_count=(SELECT count(*) FROM receipts WHERE room_id=rooms.id);
+        PRAGMA user_version = 3;
+      `);
     })();
   return db;
 }

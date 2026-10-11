@@ -4,7 +4,7 @@ The interface uses original SVG artwork and CSS, with local font files. The embl
 
 | Asset                                       | Origin                                                                                            | License / location                                                                          |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Inter, Latin 400/500/600/700                | Inter Project Authors, distributed by `@fontsource/inter`                                         | SIL Open Font License 1.1; [included notice](../public/licenses/Inter-OFL.txt)              |
+| Inter, Latin 400/600                        | Inter Project Authors, distributed by `@fontsource/inter`                                         | SIL Open Font License 1.1; [included notice](../public/licenses/Inter-OFL.txt)              |
 | Cormorant Garamond, Latin 500 normal/italic | Cormorant Project Authors, distributed by `@fontsource/cormorant-garamond`                        | SIL Open Font License 1.1; [included notice](../public/licenses/Cormorant-Garamond-OFL.txt) |
 | Brand emblem / favicon                      | Original five-mana commander crest, with an opaque dark icon background and maskable-safe padding | `src/client/brand/emblem.ts`, `public/icon.svg`; [PolyForm Noncommercial 1.0.0](../LICENSE) |
 | Install icons                               | Rendered directly from `public/icon.svg` with `rsvg-convert` at 192 and 512 pixels                | `public/icon-192.png`, `public/icon-512.png`; [PolyForm Noncommercial 1.0.0](../LICENSE)    |
@@ -16,7 +16,7 @@ The interface uses original SVG artwork and CSS, with local font files. The embl
 | Room QR codes                               | Generated locally from the configured invitation URL                                              | `qrcode` dependency; no external QR API                                                     |
 | Board screenshots                           | Captured from the working application with sample player names                                    | `docs/screenshots/`; no personal game exports                                               |
 
-Vite bundles the font subsets into the app shell, and the license notices ship under `/licenses/`. Dependency packages retain their own notices and licenses in the lockfile-resolved packages; choosing an application license does not replace those licenses.
+`src/client/styles/fonts.css` declares only these four WOFF2 faces; Vite bundles them into the app shell, and the license notices ship under `/licenses/`. Dependency packages retain their own notices and licenses in the lockfile-resolved packages; choosing an application license does not replace those licenses.
 
 After editing `src/client/brand/emblem.ts`, regenerate the favicon with `node --experimental-strip-types scripts/generate-emblem.mjs`. Render the install icons with `rsvg-convert -w 192 -h 192 public/icon.svg -o public/icon-192.png` and the equivalent command using 512 for both dimensions and the filename. The shared paths also render directly to the recap canvas without loading an image.
 

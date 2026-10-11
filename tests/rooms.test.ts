@@ -610,14 +610,22 @@ describe('authoritative room transactions', () => {
       f = fixture(filename);
     const original = f.svc.view(f.room.id, f.host.hash);
     // Reproduce the previous release’s schema with its existing rooms and sessions.
-    f.db.exec('ALTER TABLE members DROP COLUMN seat_profile; PRAGMA user_version = 1;');
+    f.db.exec(`
+      ALTER TABLE members DROP COLUMN seat_profile;
+      DROP INDEX receipts_retention;
+      DROP INDEX snapshots_by_room;
+      ALTER TABLE receipts DROP COLUMN base_revision;
+      ALTER TABLE rooms DROP COLUMN receipt_count;
+      ALTER TABLE rooms DROP COLUMN retry_floor_revision;
+      PRAGMA user_version = 1;
+    `);
     f.db.close();
     const db = openDatabase(filename);
     close.push(() => {
       if (db.open) db.close();
     });
     const svc = new RoomService(db, config, f.svc.now);
-    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    expect(db.pragma('user_version', { simple: true })).toBe(3);
     expect(svc.view(f.room.id, f.host.hash)).toEqual(original);
     const card: CommanderCard = {
       id: randomUUID(),
@@ -930,6 +938,68 @@ describe('authoritative room transactions', () => {
     expect(changes).toEqual([f.room.id]);
     expect(f.svc.view(f.room.id, f.host.hash).revision).toBe(after.revision);
   });
+  it('passes the room to the longest-seated player when the host session expires', () => {
+    const f = fixture();
+    f.approve();
+    const before = f.svc.view(f.room.id, f.guest.hash);
+    f.advance(10_000);
+    f.db.prepare('UPDATE sessions SET expires_at=? WHERE hash=?').run(f.svc.now(), f.host.hash);
+    f.svc.cleanup();
+    const after = f.svc.view(f.room.id, f.guest.hash);
+    expect(after.hostId).toBe(f.g.me.id);
+    expect(after.revision).toBe(before.revision + 1);
+    // Host-only details and table controls now belong to the promoted player.
+    expect(after.code).toBe(f.room.code);
+    expect(after.game).toEqual(before.game);
+    expect(f.svc.view(f.room.id, f.other.hash).hostId).toBe(f.g.me.id);
+    expect(f.run(f.other.hash, { type: 'end' }).receipt.ok).toBe(false);
+    expect(f.run(f.guest.hash, { type: 'end' }).receipt.ok).toBe(true);
+  });
+  it('keeps waiting guests in a room whose only approved member expired', () => {
+    const f = fixture();
+    f.advance(10_000);
+    f.db.prepare('UPDATE sessions SET expires_at=? WHERE hash=?').run(f.svc.now(), f.host.hash);
+    f.svc.cleanup();
+    const waiting = f.svc.view(f.room.id, f.guest.hash);
+    expect(waiting.me.status).toBe('pending');
+    expect(waiting.hostId).toBe(f.room.hostId);
+    expect(waiting.game).toBeUndefined();
+  });
+  it('drops an unused guest session after a day without touching room members', () => {
+    const f = fixture(),
+      unused = f.session();
+    f.advance(86_400_000 - 1000);
+    f.svc.cleanup();
+    expect(() => f.svc.assertSession(unused.hash)).not.toThrow();
+    f.advance(1000);
+    f.svc.cleanup();
+    expect(() => f.svc.assertSession(unused.hash)).toThrow(/expired/);
+    // A pending guest is a room member, however long they have waited.
+    expect(f.svc.view(f.room.id, f.guest.hash).me.status).toBe('pending');
+    expect(f.svc.view(f.room.id, f.host.hash).hostId).toBe(f.room.hostId);
+    expect(f.svc.session(unused.token, true).token).not.toBe(unused.token);
+  });
+  it('keeps receipts for the current and previous match without replaying an older action', () => {
+    const f = fixture();
+    f.approve();
+    const seat = f.room.seats[0].id;
+    const old = f.envelope(f.guest.hash, { type: 'adjust', playerId: seat, field: 'life', delta: -3 });
+    const first = f.svc.execute(f.guest.hash, old).receipt;
+    expect(first.ok).toBe(true);
+    f.run(f.host.hash, { type: 'rematch' });
+    expect(f.svc.execute(f.guest.hash, old).receipt).toEqual(first);
+    f.run(f.host.hash, { type: 'rematch' });
+    const games = (f.db.prepare('SELECT DISTINCT game_id FROM receipts').all() as { game_id: string }[]).map(
+      (row) => row.game_id,
+    );
+    expect(games).toHaveLength(1);
+    expect(games).not.toContain(old.gameId);
+    expect(f.svc.execute(f.guest.hash, old).receipt).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/match changed/i),
+    });
+    expect(f.svc.view(f.room.id, f.guest.hash).game!.players[seat].life).toBe(40);
+  });
   it('retains a receipt after process restart and beyond bounded history', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mtg-room-'));
     close.push(() => rmSync(dir, { recursive: true, force: true }));
@@ -957,6 +1027,88 @@ describe('authoritative room transactions', () => {
     const svc = new RoomService(db, config, () => 1_800_000_000_000);
     expect(svc.execute(f.host.hash, env).receipt).toEqual(first.receipt);
     expect(svc.view(f.room.id, f.host.hash).game!.players[f.room.me.seatId!].life).toBe(40);
+  });
+  it('bounds receipts and refuses expired retries without applying an action twice after restart', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mtg-retry-window-'));
+    close.push(() => rmSync(dir, { recursive: true, force: true }));
+    const filename = join(dir, 'rooms.sqlite'),
+      f = fixture(filename);
+    f.svc.config = { ...config, receiptLimit: 6 };
+    const command: Command = { type: 'adjust', playerId: f.room.me.seatId!, field: 'life', delta: -1 };
+    const old = f.envelope(f.host.hash, command);
+    expect(f.svc.execute(f.host.hash, old).receipt.ok).toBe(true);
+    for (let i = 0; i < 5; i++) expect(f.run(f.host.hash, command).receipt.ok).toBe(true);
+    const recent = f.envelope(f.host.hash, command),
+      result = f.svc.execute(f.host.hash, recent);
+    expect(result.receipt.ok).toBe(true);
+    expect(f.db.prepare('SELECT * FROM receipts').all()).toHaveLength(3);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.players[command.playerId].life).toBe(33);
+    f.db.close();
+    const db = openDatabase(filename);
+    close.push(() => {
+      db.close();
+    });
+    const svc = new RoomService(db, f.svc.config, f.svc.now);
+    expect(svc.execute(f.host.hash, recent).receipt).toEqual(result.receipt);
+    expect(svc.execute(f.host.hash, old).receipt).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/retry window/i),
+    });
+    expect(svc.view(f.room.id, f.host.hash).game!.players[command.playerId].life).toBe(33);
+    const row = db
+      .prepare('SELECT receipt_count,retry_floor_revision FROM rooms WHERE id=?')
+      .get(f.room.id) as { receipt_count: number; retry_floor_revision: number };
+    expect(row.receipt_count).toBe(3);
+    expect(row.retry_floor_revision).toBeGreaterThan(old.baseRevision);
+  });
+  it('refuses future revisions before applying relative actions or recording receipts', () => {
+    const f = fixture();
+    const before = f.svc.view(f.room.id, f.host.hash);
+    const command: Command = { type: 'adjust', playerId: f.room.me.seatId!, field: 'life', delta: -1 };
+    const future = f.envelope(f.host.hash, command, before.revision + 1000);
+    for (let i = 0; i < 3; i++)
+      expect(f.svc.execute(f.host.hash, future).receipt).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/revision that has not occurred/i),
+      });
+    expect(f.db.prepare('SELECT * FROM receipts').all()).toHaveLength(0);
+    expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(before.game);
+    // Ordinary relative actions from the last confirmed view still commute.
+    expect(f.run(f.host.hash, command, before.revision).receipt.ok).toBe(true);
+    expect(f.run(f.host.hash, command, before.revision).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.players[command.playerId].life).toBe(38);
+  });
+  it('compacts repeated rejections without disabling the last valid undo', () => {
+    const f = fixture();
+    f.svc.config = { ...config, receiptLimit: 4 };
+    f.run(f.host.hash, { type: 'adjust', playerId: f.room.me.seatId!, field: 'life', delta: -2 });
+    for (let i = 0; i < 4; i++)
+      expect(
+        f.run(f.guest.hash, { type: 'set', playerId: f.room.me.seatId!, field: 'life', value: 100 }).receipt
+          .ok,
+      ).toBe(false);
+    expect(f.db.prepare('SELECT * FROM receipts').all()).toHaveLength(2);
+    expect(f.run(f.host.hash, { type: 'undo' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.players[f.room.me.seatId!].life).toBe(40);
+  });
+  it('reuses validated games while serializing each recipient’s own permissions and private fields', () => {
+    const f = fixture();
+    const snapshot = f.svc.snapshot(f.room.id);
+    const host = f.svc.view(f.room.id, f.host.hash, snapshot);
+    const pending = f.svc.view(f.room.id, f.guest.hash, snapshot);
+    expect(f.svc.view(f.room.id, f.host.hash).game).toBe(host.game);
+    expect(JSON.parse(f.svc.serializeView(host))).toEqual(host);
+    expect(JSON.parse(f.svc.serializeView(pending))).toEqual(pending);
+    expect(pending).not.toHaveProperty('game');
+    expect(pending).not.toHaveProperty('code');
+    expect(pending.members).toHaveLength(1);
+    f.approve();
+    const next = f.svc.snapshot(f.room.id);
+    const guest = f.svc.view(f.room.id, f.guest.hash, next);
+    expect(JSON.parse(f.svc.serializeView(guest))).toEqual(guest);
+    expect(guest).not.toHaveProperty('code');
+    expect(guest.me.id).toBe(f.g.me.id);
+    expect(() => f.svc.view(f.room.id, f.session().hash, next)).toThrow(/access/i);
   });
   it('converges across eight guests and preserves the same recorded dice result', () => {
     const f = fixture(':memory:', 8);

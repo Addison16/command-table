@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { CommanderCard } from '../../shared/cards.js';
+import { useApp } from '../app/store.js';
 import '../styles/commander-art.css';
 
 export function ArtworkImage({ card }: { card: CommanderCard }) {
+  const horizontal = useApp((s) => s.profile.artPositions[card.id]?.x ?? 50);
+  const vertical = useApp((s) => s.profile.artPositions[card.id]?.y ?? 35);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const retry = () => setFailed(false);
@@ -18,6 +21,7 @@ export function ArtworkImage({ card }: { card: CommanderCard }) {
       referrerPolicy="no-referrer"
       decoding="async"
       draggable={false}
+      style={{ objectPosition: `${horizontal}% ${vertical}%` }}
       onError={() => setFailed(true)}
     />
   );

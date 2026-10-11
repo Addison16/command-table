@@ -62,6 +62,7 @@ try {
         await page.getByRole('button', { name: 'Game menu', exact: true }).click();
         await page.getByRole('button', { name: 'Display & preferences', exact: true }).click();
         await page.getByRole('combobox', { name: 'Appearance', exact: true }).selectOption(theme);
+        await page.getByText('Customize colors & finish', { exact: true }).click();
         await page.getByRole('radio', { name: colorTheme, exact: true }).check();
         await page.getByRole('radio', { name: accentColor, exact: true }).check();
         await page.getByRole('combobox', { name: 'Table background', exact: true }).selectOption(tableFinish);

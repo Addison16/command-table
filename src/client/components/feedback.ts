@@ -39,6 +39,52 @@ function connect(context: AudioContext, source: AudioScheduledSourceNode, gain: 
     playing.delete(source);
   };
 }
+function knock(context: AudioContext, index: number) {
+  const length = Math.ceil(context.sampleRate * 0.11);
+  const buffer = context.createBuffer(1, length, context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  let seed = 7919 + index * 271;
+  for (let i = 0; i < length; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const t = i / context.sampleRate;
+    const attack = Math.min(1, t / 0.0015);
+    samples[i] =
+      attack *
+      ((seed / 2147483648 - 1) * Math.exp(-t * 95) * 0.6 +
+        Math.sin(t * Math.PI * 2 * (1250 + index * 73)) * Math.exp(-t * 52) * 0.3 +
+        Math.sin(t * Math.PI * 2 * 420) * Math.exp(-t * 65) * 0.2);
+  }
+  return buffer;
+}
+/** Sound each strike of a thrown die when it happens, louder for harder hits. */
+export function playImpacts(impacts: readonly { time: number; speed: number }[]) {
+  const current = generation;
+  // Corners that land together are one knock; keep the hardest of a busy roll.
+  const strikes: { time: number; speed: number }[] = [];
+  for (const impact of impacts) {
+    const last = strikes[strikes.length - 1];
+    if (last && impact.time - last.time < 0.02) last.speed = Math.max(last.speed, impact.speed);
+    else strikes.push({ ...impact });
+  }
+  const loudest = [...strikes].sort((a, b) => b.speed - a.speed).slice(0, 28);
+  void unlockAudio()
+    .then((context) => {
+      if (!context || current !== generation) return;
+      const voices = Array.from({ length: 5 }, (_, index) => knock(context, index));
+      const start = context.currentTime + 0.01;
+      loudest.forEach((strike, index) => {
+        const source = context.createBufferSource(),
+          gain = context.createGain();
+        source.buffer = voices[index % voices.length];
+        gain.gain.value = 0.5 * Math.min(1, Math.pow(strike.speed / 11, 0.8));
+        connect(context, source, gain);
+        source.start(start + strike.time);
+      });
+    })
+    .catch(() => {
+      /* Optional audio never blocks gameplay. */
+    });
+}
 /** Synthesized ivory-on-table impacts; no downloads or microphone access. */
 export function playCue(kind: 'up' | 'down' | 'roll' = 'up', duration = 2.25) {
   if (Date.now() - lastSound < 90) return;
@@ -50,23 +96,9 @@ export function playCue(kind: 'up' | 'down' | 'roll' = 'up', duration = 2.25) {
       if (kind === 'roll') {
         const times = duration < 0.3 ? [0] : [0, 0.09, 0.22, 0.38, 0.62, 0.91, 1.28, 1.77, 2.15];
         times.forEach((offset, index) => {
-          const length = Math.ceil(context.sampleRate * 0.11);
-          const buffer = context.createBuffer(1, length, context.sampleRate);
-          const samples = buffer.getChannelData(0);
-          let seed = 7919 + index * 271;
-          for (let i = 0; i < length; i++) {
-            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-            const t = i / context.sampleRate;
-            const attack = Math.min(1, t / 0.0015);
-            samples[i] =
-              attack *
-              ((seed / 2147483648 - 1) * Math.exp(-t * 95) * 0.6 +
-                Math.sin(t * Math.PI * 2 * (1250 + index * 73)) * Math.exp(-t * 52) * 0.3 +
-                Math.sin(t * Math.PI * 2 * 420) * Math.exp(-t * 65) * 0.2);
-          }
           const source = context.createBufferSource(),
             gain = context.createGain();
-          source.buffer = buffer;
+          source.buffer = knock(context, index);
           gain.gain.value = 0.48 * (1 - index * 0.065);
           connect(context, source, gain);
           source.start(context.currentTime + 0.01 + (offset * duration) / 2.25);

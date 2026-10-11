@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 800" fill="none">
+
+  <!-- Two complete instruments and readable constellations anchor the tall composition. -->
+  <g stroke="#cbb275" stroke-opacity=".23">
+    <circle cx="429" cy="61" r="185"/><circle cx="429" cy="61" r="169" stroke-dasharray="1 10"/>
+    <circle cx="429" cy="61" r="145"/><circle cx="429" cy="61" r="120" stroke-opacity=".1"/>
+    <path d="M429-124V246M244 61H614M298-70L560 192M298 192L560-70" stroke-opacity=".12"/>
+    <circle cx="55" cy="746" r="127" stroke-opacity=".15"/>
+    <circle cx="55" cy="746" r="110" stroke-dasharray="1 9" stroke-opacity=".18"/>
+    <path d="M22 746H88M55 713V779M32 723L78 769M32 769L78 723"/>
+    <path d="M27 148L75 187L112 133L165 224M316 585L366 645L425 612L468 692M33 605L70 546L119 562" stroke="#acb5df" stroke-opacity=".3"/>
+  </g>
+  <g fill="#e2d3a3" fill-opacity=".48">
+    <circle cx="27" cy="148" r="2.5"/><circle cx="75" cy="187" r="2"/><circle cx="112" cy="133" r="3"/><circle cx="165" cy="224" r="2"/>
+    <circle cx="316" cy="585" r="2"/><circle cx="366" cy="645" r="3"/><circle cx="425" cy="612" r="2.5"/><circle cx="468" cy="692" r="2"/>
+    <circle cx="33" cy="605" r="2"/><circle cx="70" cy="546" r="2.3"/><circle cx="119" cy="562" r="2"/>
+    <circle cx="48" cy="328" r="1"/><circle cx="432" cy="472" r="1.2"/><circle cx="220" cy="68" r="1"/><circle cx="253" cy="730" r="1"/>
+  </g>
+  <path d="M429 40L433 57L450 61L433 65L429 82L425 65L408 61L425 57Z" fill="#d4bd84" fill-opacity=".34"/>
+</svg>

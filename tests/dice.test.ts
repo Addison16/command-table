@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dot, geometry, orient, rollSpin } from '../src/client/dice/geometry.js';
+import { dot, geometry, orient } from '../src/client/dice/geometry.js';
+import { makeDieMotion, sampleDieMotion } from '../src/client/dice/motion.js';
 import { roundedGeometry } from '../src/client/dice/rounded.js';
 import { diceFaceLabel, diceSurfaceColor } from '../src/client/dice/ivory.js';
 import { visualDice } from '../src/client/dice/presentation.js';
@@ -217,17 +218,21 @@ describe('dice polyhedra', () => {
     expect([...edges.values()].every((n) => n === 2)).toBe(true);
     // Every finished roll must be truly head-on, with level edges and exactly
     // upright lettering. A shallow resting tilt is still a failed landing.
-    for (const seed of [0, 0.37, 1]) {
-      const face = faces[0],
-        spin = rollSpin(1, seed);
-      const normal = orient(face.normal, face, spin);
-      const u = orient(face.u, face, spin);
-      const v = orient(face.v, face, spin);
-      expect(spin).toEqual([0, 0, 0]);
-      normal.forEach((n, i) => expect(n).toBeCloseTo(i === 2 ? 1 : 0, 12));
-      u.forEach((n, i) => expect(n).toBeCloseTo(i === 0 ? 1 : 0, 12));
-      v.forEach((n, i) => expect(n).toBeCloseTo(i === 1 ? 1 : 0));
-      expect(face.inradius).toBeGreaterThan(0);
+    const face = faces[0];
+    const normal = orient(face.normal, face, [0, 0, 0]);
+    const u = orient(face.u, face, [0, 0, 0]);
+    const v = orient(face.v, face, [0, 0, 0]);
+    normal.forEach((n, i) => expect(n).toBeCloseTo(i === 2 ? 1 : 0, 12));
+    u.forEach((n, i) => expect(n).toBeCloseTo(i === 0 ? 1 : 0, 12));
+    v.forEach((n, i) => expect(n).toBeCloseTo(i === 1 ? 1 : 0));
+    expect(face.inradius).toBeGreaterThan(0);
+    for (const seed of [0, 813, 0xffffffff]) {
+      const track = makeDieMotion(seed, sides);
+      expect(sampleDieMotion(track, track.duration).rotation).toEqual([
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+      ]);
     }
   });
 });

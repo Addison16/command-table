@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 800" fill="none">
+
+  <!-- Veins follow the long edges of the stone rather than disappearing beyond a crop. -->
+  <g stroke="#9f9dac" stroke-opacity=".075">
+    <path d="M-50 367C28 262 83 241 94 146S141 40 186-40M287 839C295 722 357 669 365 573S455 402 530 362" stroke-width="35"/>
+    <path d="M-50 373C49 260 55 248 107 139S123 53 189-40M283 839C321 705 340 687 369 574S441 424 530 357" stroke-width="11"/>
+  </g>
+  <g stroke="#bf9e62" stroke-opacity=".35">
+    <path d="M-20 351L34 300L67 290L83 198L111 171L117 91L152 55L180-20M288 820L321 747L337 690L371 667L360 581L397 536L410 462L471 403L500 365" stroke-width="1.8"/>
+    <path d="M83 198L38 149L42 99L22-20M117 91L80 63L76 10M337 690L403 721L421 774M397 536L444 550L503 524" stroke-opacity=".2"/>
+  </g>
+  <g stroke="#d4b66f" stroke-opacity=".18">
+    <path d="M-20 332L29 280L57 277L71 195L98 163L106 88L140 49L174-20M300 820L334 753L351 699L384 675L374 585L409 543L423 468L481 412"/>
+  </g>
+</svg>

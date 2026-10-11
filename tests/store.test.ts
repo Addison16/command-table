@@ -302,6 +302,23 @@ describe('local game transitions and recovery', () => {
     expect((await store.repository.active()).game!.players[playerId].name).toBe('Rowan');
   });
 
+  it('keeps the save queue usable when a conflicting save cannot be read back', async () => {
+    await store.startLocal(defaultSetup(2));
+    const original = store.useApp.getState().game!;
+    // Use the class instance loaded with this test's fresh store module.
+    const { ConflictError } = await import('../src/client/storage/repository.js');
+    vi.spyOn(store.repository, 'commit').mockRejectedValueOnce(
+      new ConflictError('Another tab saved a newer game.'),
+    );
+    vi.spyOn(store.repository, 'active').mockRejectedValueOnce(new Error('This saved game is damaged'));
+    await store.act({ type: 'adjust', playerId: original.order[0], field: 'life', delta: -1 });
+    expect(store.useApp.getState()).toMatchObject({ game: original, pending: 0, readOnly: true });
+    expect(store.useApp.getState().error).toContain('Another tab');
+    await store.startLocal(defaultSetup(2));
+    expect(store.useApp.getState()).toMatchObject({ readOnly: false, pending: 0, screen: 'board' });
+    expect(store.useApp.getState().game!.id).not.toBe(original.id);
+  });
+
   it('does not report a room player save as successful without an acknowledgement sender', async () => {
     const { room, send } = await connectedRoom();
     store.useApp.setState({ readOnly: false });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { archenemyOutcome, defaultSetup, teamOf, turnOrder } from '../../shared/game.js';
 import { canUndoRoomAction } from '../../shared/permissions.js';
 import { type Game, type Roll } from '../../shared/schema.js';
@@ -18,19 +18,36 @@ import {
 } from './store.js';
 import { ask, ConfirmationDialog, downloadText, Icon, Sheet, Sigil } from '../components/ui.js';
 import { Board } from '../features/Board.js';
-import { SetupSheet } from '../features/Setup.js';
-import { PlayerDetails } from '../features/PlayerDetails.js';
-import { CommanderQuick } from '../features/CommanderQuick.js';
-import { Utilities } from '../features/Utilities.js';
-import { GroupLife } from '../features/GroupLife.js';
-import { SchemeDeck } from '../features/SchemeDeck.js';
-import { GameMenu, HistorySheet } from '../features/GameMenu.js';
-import { Settings, Enhancements, PwaUpdates } from '../features/Settings.js';
-import { JoinSheet, RoomSheet, Lobby } from '../features/Rooms.js';
-import { RecentGames } from '../features/RecentGames.js';
-import { DiceRoll } from '../dice/DiceRoll.js';
+import { FeatureBoundary } from '../components/FeatureBoundary.js';
 import { TableLayout } from '../features/TableLayout.js';
+import { gameMoments, stillWinner } from '../features/gameMoments.js';
 import { useTableLayout } from '../features/useTableLayout.js';
+import { Enhancements, PwaUpdates } from '../features/BrowserEnhancements.js';
+import { RecentGames } from '../features/RecentGames.js';
+
+const SetupSheet = lazy(() => import('../features/Setup.js').then((m) => ({ default: m.SetupSheet })));
+const PlayerDetails = lazy(() =>
+  import('../features/PlayerDetails.js').then((m) => ({ default: m.PlayerDetails })),
+);
+const CommanderQuick = lazy(() =>
+  import('../features/CommanderQuick.js').then((m) => ({ default: m.CommanderQuick })),
+);
+const Utilities = lazy(() => import('../features/Utilities.js').then((m) => ({ default: m.Utilities })));
+const GroupLife = lazy(() => import('../features/GroupLife.js').then((m) => ({ default: m.GroupLife })));
+const SchemeDeck = lazy(() => import('../features/SchemeDeck.js').then((m) => ({ default: m.SchemeDeck })));
+const GameMenu = lazy(() => import('../features/GameMenu.js').then((m) => ({ default: m.GameMenu })));
+const HistorySheet = lazy(() => import('../features/GameMenu.js').then((m) => ({ default: m.HistorySheet })));
+const Settings = lazy(() => import('../features/Settings.js').then((m) => ({ default: m.Settings })));
+const JoinSheet = lazy(() => import('../features/Rooms.js').then((m) => ({ default: m.JoinSheet })));
+const RoomSheet = lazy(() => import('../features/Rooms.js').then((m) => ({ default: m.RoomSheet })));
+const Lobby = lazy(() => import('../features/Rooms.js').then((m) => ({ default: m.Lobby })));
+const PlayerFallen = lazy(() =>
+  import('../features/GameMoments.js').then((m) => ({ default: m.PlayerFallen })),
+);
+const WinnerScreen = lazy(() =>
+  import('../features/GameMoments.js').then((m) => ({ default: m.WinnerScreen })),
+);
+const DiceRoll = lazy(() => import('../dice/DiceRoll.js').then((m) => ({ default: m.DiceRoll })));
 
 export function App() {
   const state = useApp(),
@@ -51,6 +68,9 @@ export function App() {
   const [presentation, setPresentation] = useState<{ game: Game; roll: Roll; replay?: boolean }>();
   const observedRoll = useRef<{ gameId: string; rollId?: string } | undefined>(undefined);
   const observedEnd = useRef<{ id: string; status: Game['status'] } | undefined>(undefined);
+  const [fallen, setFallen] = useState<{ key: string; game: Game; playerId: string }[]>([]);
+  const [winner, setWinner] = useState<{ gameId: string; playerId: string }>();
+  const observedSeats = useRef<Game | undefined>(undefined);
   const sheetKey = useRef(`mtg-sheet-${Date.now()}`);
   const open = useCallback((s: string) => {
     if (document.activeElement instanceof HTMLElement && !document.activeElement.closest('[role="dialog"]')) {
@@ -94,7 +114,37 @@ export function App() {
     }
     if (latest && latest.id !== previous.rollId && state.screen === 'board') showRoll(confirmed, latest);
   }, [state.confirmed, state.screen, showRoll]);
-  const hasSheet = sheet !== null || presentation !== undefined;
+  useEffect(() => {
+    const confirmed = state.confirmed;
+    const previous = observedSeats.current;
+    observedSeats.current = confirmed;
+    if (!confirmed || state.screen !== 'board') {
+      setFallen([]);
+      setWinner(undefined);
+      return;
+    }
+    const moments = gameMoments(previous, confirmed);
+    if (moments.fallen.length)
+      setFallen((queue) => [
+        ...queue,
+        ...moments.fallen.map((playerId) => ({
+          key: `${playerId}:${confirmed.revision}`,
+          game: confirmed,
+          playerId,
+        })),
+      ]);
+    if (moments.winner) {
+      // Like a dice result, the winner is shown on the table itself.
+      dispatchEvent(new Event('mtg-cancel-input'));
+      setSheet(null);
+      setPresentation(undefined);
+      setWinner({ gameId: confirmed.id, playerId: moments.winner });
+    }
+  }, [state.confirmed, state.screen]);
+  const dismissFallen = useCallback(() => setFallen((queue) => queue.slice(1)), []);
+  // The winner follows the elimination notice, and leaves if Undo restores a player.
+  const showWinner = state.screen === 'board' && !fallen.length && stillWinner(state.confirmed, winner);
+  const hasSheet = sheet !== null || presentation !== undefined || showWinner;
   useEffect(() => {
     if (hasSheet && history.state?.mtgSheet !== sheetKey.current)
       history.pushState({ ...history.state, mtgSheet: sheetKey.current }, '', location.href);
@@ -105,6 +155,7 @@ export function App() {
         history.replaceState(history.state, '', location.pathname);
       setSheet(null);
       setPresentation(undefined);
+      setWinner(undefined);
     };
     addEventListener('popstate', back);
     return () => removeEventListener('popstate', back);
@@ -216,22 +267,22 @@ export function App() {
         )}
         {state.screen === 'home' && (
           <main className="home">
-            <div className="hero-sigil">
-              <Sigil />
-              <span className="orbit orbit-one" />
-              <span className="orbit orbit-two" />
+            <div className="home-intro">
+              <div className="hero-sigil" aria-hidden="true">
+                <Sigil />
+                <span className="orbit orbit-one" />
+                <span className="orbit orbit-two" />
+              </div>
+              <div>
+                <div className="eyebrow gold">GOOD COMPANY. GREAT GAMES.</div>
+                <h1>
+                  Gather.
+                  <br />
+                  <em>Let the magic happen.</em>
+                </h1>
+                <p className="hero-description">Life, legends, and a little luck. We’ll keep count.</p>
+              </div>
             </div>
-            <div className="eyebrow gold">GOOD COMPANY. GREAT GAMES.</div>
-            <h1>
-              Gather.
-              <br />
-              <em>Let the magic happen.</em>
-            </h1>
-            <p className="hero-description">
-              Life, legends, and a little luck.
-              <br />
-              We’ll keep count. You make the memories.
-            </p>
             {state.recovery && (
               <div className="notice">
                 <h3>Your saved data needs attention</h3>
@@ -280,55 +331,61 @@ export function App() {
                 <Icon name="arrow" />
               </button>
             )}
-            <div className="mode-grid">
-              <div className="mode-card">
-                <div className="mode-symbol">
-                  <Icon name="phone" size={28} />
-                </div>
-                <h2>One device</h2>
-                <p>
-                  One screen. The whole table.
-                  <br />
-                  Works offline, too.
-                </p>
-                <button className="primary full" disabled={state.recovery} onClick={() => setup('local')}>
-                  Set up a game <Icon name="arrow" size={17} />
+            <div className="home-start">
+              <div className="home-actions">
+                <div className="eyebrow">YOUR NEXT GREAT GAME</div>
+                <button
+                  className="primary full home-primary"
+                  aria-label="Quick 4 · 40 life"
+                  disabled={state.recovery}
+                  onClick={() => void startLocal(defaultSetup()).catch(report)}
+                >
+                  <Icon name="phone" size={24} />
+                  <span>
+                    <strong>Quick 4 · 40 life</strong>
+                    <small>One screen. The whole table. Ready in a tap.</small>
+                  </span>
+                  <Icon name="arrow" size={20} />
                 </button>
-                <div className="quick-start">
-                  <button
-                    disabled={state.recovery}
-                    onClick={() => void startLocal(defaultSetup()).catch(report)}
-                  >
-                    Quick 4 · 40 life
+                <div className="home-room-actions">
+                  <button className="secondary" onClick={() => setup('room')}>
+                    <Icon name="people" size={18} />
+                    Create room
                   </button>
-                  <span>·</span>
+                  <button className="secondary" onClick={() => open('join')}>
+                    <Icon name="arrow" size={18} />
+                    Join room
+                  </button>
+                </div>
+                <div className="home-secondary-actions">
+                  <button className="text-button" disabled={state.recovery} onClick={() => setup('local')}>
+                    Set up a game
+                  </button>
                   <button
+                    className="text-button"
                     disabled={state.recovery}
                     onClick={() => void startLocal(defaultSetup(2, false)).catch(report)}
                   >
                     Quick 2 · 20 life
                   </button>
                 </div>
-              </div>
-              <div className="mode-card shared">
-                <div className="mode-symbol">
-                  <Icon name="people" size={28} />
-                </div>
-                <h2>Shared room</h2>
-                <p>
-                  Your own screens.
-                  <br />
-                  One game, together.
+                <p className="home-mode-hint">
+                  Play on one device offline, or bring everyone’s screens together in a shared room.
                 </p>
-                <div className="button-row">
-                  <button className="secondary" onClick={() => setup('room')}>
-                    Create room
-                  </button>
-                  <button className="secondary" onClick={() => open('join')}>
-                    Join room
-                  </button>
+              </div>
+              <div className="home-table-preview" aria-hidden="true">
+                <div className="preview-table-edge">
+                  {['blue', 'violet', 'green', 'ember'].map((color, i) => (
+                    <div className="preview-seat" key={color} data-player-color={color}>
+                      <span className="preview-seat-name">PLAYER {i + 1}</span>
+                      <strong>40</strong>
+                      <span>
+                        − <i /> +
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <div className="mode-note">No accounts. Just your friends.</div>
+                <span className="preview-table-caption">A LITTLE MAGIC. EVERY SEAT.</span>
               </div>
             </div>
             <RecentGames />
@@ -341,7 +398,19 @@ export function App() {
             </button>
           </main>
         )}
-        {state.screen === 'lobby' && <Lobby openRoom={() => open('room')} />}
+        {state.screen === 'lobby' && (
+          <FeatureBoundary onClose={home}>
+            <Suspense
+              fallback={
+                <p className="loading" role="status">
+                  Opening your room…
+                </p>
+              }
+            >
+              <Lobby openRoom={() => open('room')} />
+            </Suspense>
+          </FeatureBoundary>
+        )}
         {state.screen === 'board' && game && (
           <>
             <div className="board-topline">
@@ -424,69 +493,115 @@ export function App() {
           </>
         )}
       </div>
-      {sheet === 'new-game' && (
-        <Sheet
-          title="How are you playing?"
-          description="Your unfinished game will be saved so you can come back to it."
-          onClose={close}
+      <FeatureBoundary
+        key={`${sheet}:${presentation?.roll.id}:${showWinner}`}
+        onClose={() => {
+          setSheet(null);
+          setPresentation(undefined);
+          setWinner(undefined);
+          setFallen([]);
+          close();
+        }}
+      >
+        <Suspense
+          fallback={
+            <Sheet title="Opening…" onClose={close}>
+              <p role="status">Just a moment while your table gets ready.</p>
+            </Sheet>
+          }
         >
-          <div className="new-game-modes">
-            <button className="secondary" onClick={() => setup('local')}>
-              <Icon name="phone" size={28} />
-              <strong>One phone</strong>
-              <span>One life counter for the whole table.</span>
-            </button>
-            <button className="secondary" onClick={() => setup('room')}>
-              <Icon name="people" size={28} />
-              <strong>Multiple phones</strong>
-              <span>Create a shared room for your friends.</span>
-            </button>
-          </div>
-          <button className="text-button full" onClick={() => open('join')}>
-            Join an existing room
-          </button>
-        </Sheet>
-      )}
-      {sheet === 'setup' && <SetupSheet mode={setupMode} onClose={close} />}
-      {sheet === 'join' && <JoinSheet onClose={close} />}
-      {sheet === 'room' && state.room && <RoomSheet onClose={close} />}
-      {sheet?.startsWith('player:') && game?.players[sheet.slice(7)] && (
-        <PlayerDetails key={sheet} playerId={sheet.slice(7)} onClose={close} />
-      )}
-      {sheet?.startsWith('damage:') && game?.players[sheet.slice(7)] && (
-        <CommanderQuick key={`${game.id}:${sheet}`} playerId={sheet.slice(7)} mode="damage" onClose={close} />
-      )}
-      {sheet?.startsWith('tax:') && game?.commanders[sheet.slice(4)] && (
-        <CommanderQuick
-          key={`${game.id}:${sheet}`}
-          playerId={game.commanders[sheet.slice(4)].ownerId}
-          commanderId={sheet.slice(4)}
-          mode="tax"
-          onClose={close}
-        />
-      )}
-      {sheet === 'utilities' && game && (
-        <Utilities
-          onClose={close}
-          onReplay={(roll) => showRoll(state.confirmed!, roll, true)}
-          onGroupLife={() => open('group-life')}
-        />
-      )}
-      {sheet === 'group-life' && game && <GroupLife key={game.id} onClose={close} />}
-      {sheet === 'schemes' && game?.archenemy && <SchemeDeck onClose={close} />}
-      {sheet === 'menu' && game && <GameMenu onClose={close} open={open} />}
-      {sheet === 'history' && game && <HistorySheet onClose={close} />}
-      {sheet === 'settings' && <Settings onClose={close} />}
-      {sheet === 'layout' && <TableLayout onClose={close} />}
-      {presentation && state.screen === 'board' && (
-        <DiceRoll
-          key={presentation.roll.id}
-          {...presentation}
-          onClose={() => {
-            setPresentation(undefined);
-            close();
-          }}
-        />
+          {sheet === 'new-game' && (
+            <Sheet
+              title="How are you playing?"
+              description="Your unfinished game will be saved so you can come back to it."
+              onClose={close}
+            >
+              <div className="new-game-modes">
+                <button className="secondary" onClick={() => setup('local')}>
+                  <Icon name="phone" size={28} />
+                  <strong>One phone</strong>
+                  <span>One life counter for the whole table.</span>
+                </button>
+                <button className="secondary" onClick={() => setup('room')}>
+                  <Icon name="people" size={28} />
+                  <strong>Multiple phones</strong>
+                  <span>Create a shared room for your friends.</span>
+                </button>
+              </div>
+              <button className="text-button full" onClick={() => open('join')}>
+                Join an existing room
+              </button>
+            </Sheet>
+          )}
+          {sheet === 'setup' && <SetupSheet mode={setupMode} onClose={close} />}
+          {sheet === 'join' && <JoinSheet onClose={close} />}
+          {sheet === 'room' && state.room && <RoomSheet onClose={close} />}
+          {sheet?.startsWith('player:') && game?.players[sheet.slice(7)] && (
+            <PlayerDetails key={sheet} playerId={sheet.slice(7)} onClose={close} />
+          )}
+          {sheet?.startsWith('damage:') && game?.players[sheet.slice(7)] && (
+            <CommanderQuick
+              key={`${game.id}:${sheet}`}
+              playerId={sheet.slice(7)}
+              mode="damage"
+              onClose={close}
+            />
+          )}
+          {sheet?.startsWith('tax:') && game?.commanders[sheet.slice(4)] && (
+            <CommanderQuick
+              key={`${game.id}:${sheet}`}
+              playerId={game.commanders[sheet.slice(4)].ownerId}
+              commanderId={sheet.slice(4)}
+              mode="tax"
+              onClose={close}
+            />
+          )}
+          {sheet === 'utilities' && game && (
+            <Utilities
+              onClose={close}
+              onReplay={(roll) => showRoll(state.confirmed!, roll, true)}
+              onGroupLife={() => open('group-life')}
+            />
+          )}
+          {sheet === 'group-life' && game && <GroupLife key={game.id} onClose={close} />}
+          {sheet === 'schemes' && game?.archenemy && <SchemeDeck onClose={close} />}
+          {sheet === 'menu' && game && <GameMenu onClose={close} open={open} />}
+          {sheet === 'history' && game && <HistorySheet onClose={close} />}
+          {sheet === 'settings' && <Settings onClose={close} />}
+          {sheet === 'layout' && <TableLayout onClose={close} />}
+          {presentation && state.screen === 'board' && (
+            <DiceRoll
+              key={presentation.roll.id}
+              {...presentation}
+              onClose={() => {
+                setPresentation(undefined);
+                close();
+              }}
+            />
+          )}
+          {showWinner && (
+            <WinnerScreen
+              game={state.confirmed!}
+              playerId={winner!.playerId}
+              onClose={() => {
+                setWinner(undefined);
+                close();
+              }}
+            />
+          )}
+        </Suspense>
+      </FeatureBoundary>
+      {fallen[0] && state.screen === 'board' && (
+        <FeatureBoundary key={fallen[0].key} onClose={dismissFallen} dismissOnError>
+          <Suspense fallback={null}>
+            <PlayerFallen
+              key={fallen[0].key}
+              game={fallen[0].game}
+              playerId={fallen[0].playerId}
+              onDone={dismissFallen}
+            />
+          </Suspense>
+        </FeatureBoundary>
       )}
       <ConfirmationDialog />
       {state.error && !state.recovery && (

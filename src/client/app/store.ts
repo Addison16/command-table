@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { createGame, defaultSetup, setupFromGame, makeRoll, reduceGame } from '../../shared/game.js';
+import {
+  commandSeat,
+  createGame,
+  defaultSetup,
+  setupFromGame,
+  makeRoll,
+  reduceGame,
+} from '../../shared/game.js';
 import { newId, randomInt } from '../../shared/random.js';
 import {
   gameSchema,
@@ -62,7 +69,8 @@ let editorResume: Promise<void> | undefined;
 let localPending: { command: Command; context: Parameters<typeof reduceGame>[2] }[] = [];
 let roomSend: ((command: Command | AdminCommand, groupId?: string) => Promise<void>) | undefined;
 type PlayerSave = Extract<Command, { type: 'editPlayer' }>;
-type SavedCommand = Extract<Command, { type: 'editPlayer' | 'groupLife' | 'damage' }>;
+type ExactCommand = Extract<Command, { type: 'set' | 'damageSet' | 'castSet' }>;
+type SavedCommand = Extract<Command, { type: 'editPlayer' | 'groupLife' | 'damage' }> | ExactCommand;
 let roomSavePlayer: ((command: SavedCommand) => Promise<boolean>) | undefined;
 let disconnectRoom: (() => void) | undefined;
 export function registerRoom(
@@ -204,9 +212,11 @@ export function act(command: Command | AdminCommand, groupId?: string): Promise<
     } catch (e) {
       localPending = [];
       if (e instanceof ConflictError) {
-        const active = await repository.active();
         useApp.setState({ readOnly: true });
-        if (active.game) renderLocalPending(active.game);
+        // Reading the other tab's save can fail too. This queue must never stay
+        // rejected, or every later change and new game would wait on it forever.
+        const active = await repository.active().catch(() => undefined);
+        renderLocalPending(active?.game ?? confirmed);
       } else {
         renderLocalPending(confirmed);
         useApp.setState({
@@ -226,6 +236,10 @@ export function savePlayer(command: PlayerSave): Promise<boolean> {
 }
 /** Quick damage closes only after the combined damage/life change is confirmed. */
 export function saveDamage(command: Extract<Command, { type: 'damage' }>): Promise<boolean> {
+  return saveCommand(command);
+}
+/** Exact corrections keep their draft until a durable save or room receipt confirms them. */
+export function saveExact(command: ExactCommand): Promise<boolean> {
   return saveCommand(command);
 }
 export type LifeReview = {
@@ -262,7 +276,8 @@ async function saveCommand(command: SavedCommand, review?: LifeReview): Promise<
     return false;
   }
   if (state.mode === 'room') {
-    if (command.type === 'groupLife' || !canEdit(command.playerId)) {
+    const seat = state.confirmed && commandSeat(state.confirmed, command);
+    if (command.type === 'groupLife' || !seat || !canEdit(seat)) {
       report(new Error('You can change only your own seat in a shared room.'));
       return false;
     }

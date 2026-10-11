@@ -1,0 +1,188 @@
+@layer components {
+  .fallen-moment {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    pointer-events: none;
+    background: radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--page-color) 58%, transparent),
+      color-mix(in srgb, var(--page-color) 90%, transparent)
+    );
+    animation: fallen-veil 2.6s ease both;
+  }
+  .fallen-card {
+    display: grid;
+    justify-items: center;
+    gap: 7px;
+    max-width: min(360px, 100%);
+    padding: 26px 34px 24px;
+    text-align: center;
+    background: var(--surface-floating);
+    border: 1px solid color-mix(in srgb, var(--player-ink, var(--player)) 45%, transparent);
+    border-radius: 18px;
+    box-shadow: 0 24px 80px var(--shadow-color);
+    animation: fallen-card 2.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .fallen-mark {
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 4px;
+    border-radius: 50%;
+    color: var(--player-ink, var(--player));
+    background: color-mix(in srgb, var(--player) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--player-ink, var(--player)) 40%, transparent);
+  }
+  .fallen-card strong {
+    font:
+      600 38px/1.05 'Cormorant Garamond',
+      serif;
+    overflow-wrap: anywhere;
+  }
+  .fallen-card > span:last-child {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .victory-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 42;
+    background: var(--sheet-overlay);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    animation: fade-in 0.25s ease;
+  }
+  .victory-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 43;
+    display: grid;
+    place-items: center;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    outline: none;
+  }
+  .victory-card {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    width: min(420px, 100%);
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 34px 24px 18px;
+    text-align: center;
+    background: var(--surface-floating);
+    border: 1px solid var(--accent-line-strong);
+    border-radius: 22px;
+    box-shadow: 0 30px 100px var(--shadow-color);
+    animation: victory-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .victory-card::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: -180px;
+    left: 50%;
+    width: 520px;
+    height: 520px;
+    margin-left: -260px;
+    background: repeating-conic-gradient(
+      from 0deg,
+      color-mix(in srgb, var(--gold) 15%, transparent) 0 6deg,
+      transparent 6deg 18deg
+    );
+    -webkit-mask: radial-gradient(circle, #000 0, transparent 68%);
+    mask: radial-gradient(circle, #000 0, transparent 68%);
+    animation: victory-rays 40s linear infinite;
+  }
+  .victory-crest {
+    width: 92px;
+    height: 92px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: var(--gold);
+    background: var(--surface-floating);
+    border: 1px solid var(--accent-line-strong);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--player) 22%, transparent);
+  }
+  .victory-title {
+    margin: 0;
+    font:
+      600 44px/1.02 'Cormorant Garamond',
+      serif;
+    overflow-wrap: anywhere;
+  }
+  .victory-title em {
+    color: var(--gold);
+  }
+  .victory-detail {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .victory-facts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin: 6px 0 10px;
+    padding: 0;
+    list-style: none;
+  }
+  .victory-facts li {
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 100px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--soft-text);
+  }
+  .victory-card .button-row {
+    width: 100%;
+  }
+  @keyframes fallen-veil {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    12%,
+    80% {
+      opacity: 1;
+    }
+  }
+  @keyframes fallen-card {
+    0% {
+      opacity: 0;
+      transform: translateY(26px) scale(0.9);
+    }
+    14%,
+    80% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-22px) scale(0.97);
+    }
+  }
+  @keyframes victory-in {
+    from {
+      opacity: 0;
+      transform: translateY(18px) scale(0.94);
+    }
+  }
+  @keyframes victory-rays {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}

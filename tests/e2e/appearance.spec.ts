@@ -40,6 +40,7 @@ async function openSettings(page: Page) {
     await page.getByRole('button', { name: 'Display & browser settings', exact: true }).click();
   }
   await expect(page.getByRole('combobox', { name: 'Appearance', exact: true })).toBeVisible();
+  await page.getByText('Customize colors & finish', { exact: true }).click();
 }
 
 async function closeSettings(page: Page) {
@@ -309,6 +310,7 @@ test.describe('appearance before the app loads', () => {
     const entry = await appEntry.getAttribute('src');
     expect(entry).toBeTruthy();
     const entryUrl = new URL(entry!, page.url()).href;
+    const documentUrl = page.url();
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     for (const cache of ['saved', 'malformed', 'invalid', 'denied'] as const) {
@@ -338,7 +340,16 @@ test.describe('appearance before the app loads', () => {
       const requestStarted = new Promise<void>((resolve) => {
         requested = resolve;
       });
-      await page.route(entryUrl, async (route) => {
+      // A distinct module URL bypasses WebKit's immutable module cache on
+      // reload, making the held entry observable in both browser engines.
+      const heldEntry = new URL(entryUrl);
+      heldEntry.searchParams.set('appearance-paint-check', cache);
+      await page.route(documentUrl, async (route) => {
+        const response = await route.fetch();
+        const body = (await response.text()).replace(`src="${entry}"`, `src="${heldEntry.href}"`);
+        await route.fulfill({ response, body });
+      });
+      await page.route(heldEntry.href, async (route) => {
         requested();
         await deferred;
         await route.continue();
@@ -372,7 +383,8 @@ test.describe('appearance before the app loads', () => {
         await closeSettings(page);
       } finally {
         release();
-        await page.unroute(entryUrl);
+        await page.unroute(heldEntry.href);
+        await page.unroute(documentUrl);
       }
     }
     expect(errors).toEqual([]);

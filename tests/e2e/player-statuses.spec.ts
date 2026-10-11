@@ -427,6 +427,7 @@ test('damage controls exclude each recipient’s own commanders and ignore a rem
 
     await page.getByRole('button', { name: `${player.name} details`, exact: true }).click();
     const source = page.getByRole('combobox', { name: 'Combat damage source', exact: true });
+    await expect(source).toBeVisible();
     expect(
       await source
         .locator('option')

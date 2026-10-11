@@ -45,7 +45,9 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, #090d14ed 0%, #090d1499 32%, #090d1499 62%, #090d14f2 100%);
+    background:
+      radial-gradient(ellipse at 50% 52%, #090d147d 0%, #090d1430 48%, transparent 74%),
+      linear-gradient(180deg, #090d14e6 0%, #090d1450 30%, #090d1430 64%, #090d14ed 100%);
   }
   .with-commander-art .life-total {
     text-shadow:
@@ -110,5 +112,54 @@
     font-size: 10px;
     line-height: 1.5;
     margin-bottom: 0;
+  }
+  .artwork-framing-control {
+    margin: 14px 0;
+  }
+  .artwork-framing-preview {
+    position: relative;
+    height: 130px;
+    overflow: hidden;
+    border: 1px solid var(--control-line);
+    border-radius: 10px;
+  }
+  .artwork-framing-previews {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .artwork-framing-preview span {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    padding: 3px 5px;
+    border-radius: 4px;
+    background: #090d14ed;
+    color: #f3f0e8;
+    font-size: 9px;
+  }
+  .artwork-framing-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .artwork-framing-control input {
+    width: 100%;
+    min-height: 44px;
+    accent-color: var(--gold);
+  }
+}
+@layer responsive {
+  .player-tile .with-commander-art .life-controls .hold {
+    --life-control-surface: #090d14ed;
+    --life-control-ring: #f3f0e855;
+    color: #f3f0e8;
+  }
+  .player-tile .with-commander-art .life-controls .hold:not(:disabled) {
+    opacity: 1;
+  }
+  .player-tile .with-commander-art .life-controls .hold:is(:hover, :active, :focus-visible) > svg {
+    background: #090d14ed;
+    box-shadow: inset 0 0 0 1px #f3f0e875;
   }
 }

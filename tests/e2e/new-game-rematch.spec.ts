@@ -204,7 +204,11 @@ test('the ending prompt cancels safely or rematches with custom starting life an
   await page.getByRole('button', { name: 'Player 2 details', exact: true }).click();
   await page.getByRole('button', { name: 'Eliminate player', exact: true }).click();
   await page.getByRole('button', { name: 'Confirm', exact: true }).click();
-  await page.getByRole('button', { name: 'Close Player 2', exact: true }).click();
+  // Eliminating one of two players declares the other the winner; play can continue.
+  await page
+    .getByRole('dialog', { name: 'Mira wins', exact: true })
+    .getByRole('button', { name: 'Back to the table', exact: true })
+    .click();
   await page.getByRole('button', { name: 'Utilities', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Turn tracking', exact: true }).check();
   await page.getByText('Game timer', { exact: false }).click();

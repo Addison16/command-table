@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { LIMIT, palettes, type Game } from '../../shared/schema.js';
-import { act, canEdit, savePlayer, useApp, updateProfile } from '../app/store.js';
+import { act, canEdit, saveExact, savePlayer, useApp, updateProfile } from '../app/store.js';
 import { ask, Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { HoldButton } from '../components/HoldButton.js';
 import { facesAcross } from './TableLayout.js';
 import { useTableLayout } from './useTableLayout.js';
 import { CommanderInput } from '../components/CommanderInput.js';
 import { PlayerNameInput } from '../components/PlayerNameInput.js';
-import { CommanderCredits } from '../components/CommanderArtwork.js';
+import { ArtworkImage, CommanderCredits } from '../components/CommanderArtwork.js';
 import { CommanderReader } from '../components/CommanderReader.js';
 import type { CommanderCard } from '../../shared/cards.js';
 import { rememberDicePlayer } from '../dice/preference.js';
@@ -32,6 +32,7 @@ function Counter({
   disabled: boolean;
 }) {
   const [exact, setExact, resetExact] = useLiveDraft(String(value));
+  const [saving, setSaving] = useState(false);
   return (
     <div className="counter-block">
       <div className="counter-row">
@@ -72,9 +73,15 @@ function Counter({
           </>
         )}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            void act({ type: 'set', playerId, field, value: Number(exact) }).then(resetExact);
+            if (disabled || saving) return;
+            setSaving(true);
+            try {
+              if (await saveExact({ type: 'set', playerId, field, value: Number(exact) })) resetExact();
+            } finally {
+              setSaving(false);
+            }
           }}
         >
           <input
@@ -84,11 +91,11 @@ function Counter({
             min={field === 'life' ? -999999 : 0}
             max="999999"
             required
-            disabled={disabled}
+            disabled={disabled || saving}
             value={exact}
             onChange={(e) => setExact(e.target.value)}
           />
-          <button disabled={disabled}>Set</button>
+          <button disabled={disabled || saving}>{saving ? 'Saving…' : 'Set'}</button>
         </form>
       </div>
     </div>
@@ -257,7 +264,7 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
       {player.eliminated && (
         <div className="notice">
           <strong>This player is eliminated.</strong>
-          <p>Restore to resume edits. Markers and turn remain assigned until you explicitly change them.</p>
+          <p>Restore to resume edits. A turn highlight on this seat stays until you move it in Utilities.</p>
           <button
             className="primary"
             disabled={!manage}
@@ -415,6 +422,56 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
           Only changes the view on this device. Flipping a seat turns off automatic layout. Player sheets stay
           upright.
         </p>
+        {commanders.some((commander) => commander.card) && (
+          <div className="artwork-framing">
+            <h4>Artwork framing on this device</h4>
+            <p className="hint">Bring your commander into view. Slide to find the best crop for your seat.</p>
+            {commanders
+              .filter((commander) => commander.card)
+              .map((commander) => (
+                <div key={commander.id} className="artwork-framing-control">
+                  <div className="artwork-framing-previews" aria-hidden="true">
+                    <div className="artwork-framing-preview portrait">
+                      <ArtworkImage key={commander.card!.imageUrl} card={commander.card!} />
+                      <span>Portrait</span>
+                    </div>
+                    <div className="artwork-framing-preview">
+                      <ArtworkImage key={commander.card!.imageUrl} card={commander.card!} />
+                      <span>Landscape</span>
+                    </div>
+                  </div>
+                  {(['x', 'y'] as const).map((axis) => (
+                    <Field
+                      key={axis}
+                      label={`${commander.label} artwork ${axis === 'x' ? 'horizontal' : 'vertical'} position`}
+                    >
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={profile.artPositions[commander.card!.id]?.[axis] ?? (axis === 'x' ? 50 : 35)}
+                        onChange={(e) => {
+                          const id = commander.card!.id;
+                          const current = useApp.getState().profile.artPositions;
+                          const positions = Object.fromEntries(
+                            Object.entries(current)
+                              .filter(([key]) => key !== id)
+                              .slice(-63),
+                          );
+                          const position = {
+                            ...(current[id] ?? { x: 50, y: 35 }),
+                            [axis]: Number(e.target.value),
+                          };
+                          void updateProfile({ artPositions: { ...positions, [id]: position } });
+                        }}
+                      />
+                    </Field>
+                  ))}
+                </div>
+              ))}
+          </div>
+        )}
       </section>
       {!player.eliminated && (
         <button
@@ -424,7 +481,7 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
             if (
               await ask(
                 `Eliminate ${player.name}?`,
-                'The seat stays at the table. You can restore this player at any time. Reassign or clear any markers and turn highlight in Utilities.',
+                'The seat stays at the table. You can restore this player at any time. If the turn highlight is on this seat, move it in Utilities.',
               )
             )
               void act({ type: 'eliminate', playerId, eliminated: true });
@@ -450,12 +507,20 @@ function DamageCorrection({
   disabled: boolean;
 }) {
   const [total, setTotal, resetTotal] = useLiveDraft(String(value));
+  const [saving, setSaving] = useState(false);
   return (
     <form
       className="damage-correction"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        void act({ type: 'damageSet', playerId, commanderId, value: Number(total) }).then(resetTotal);
+        if (disabled || saving) return;
+        setSaving(true);
+        try {
+          if (await saveExact({ type: 'damageSet', playerId, commanderId, value: Number(total) }))
+            resetTotal();
+        } finally {
+          setSaving(false);
+        }
       }}
     >
       <label>
@@ -469,12 +534,12 @@ function DamageCorrection({
           required
           min="0"
           max="999999"
-          disabled={disabled}
+          disabled={disabled || saving}
           value={total}
           onChange={(e) => setTotal(e.target.value)}
         />
       </label>
-      <button disabled={disabled}>Correct</button>
+      <button disabled={disabled || saving}>{saving ? 'Saving…' : 'Correct'}</button>
     </form>
   );
 }
@@ -487,6 +552,7 @@ export function CommanderCasts({
   disabled: boolean;
 }) {
   const [casts, setCasts, resetCasts] = useLiveDraft(String(commander.casts));
+  const [saving, setSaving] = useState(false);
   return (
     <div className="commander-casts">
       <h4>{commander.label}</h4>
@@ -507,9 +573,16 @@ export function CommanderCasts({
       <details>
         <summary>Correct casts</summary>
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            void act({ type: 'castSet', commanderId: commander.id, value: Number(casts) }).then(resetCasts);
+            if (disabled || saving) return;
+            setSaving(true);
+            try {
+              if (await saveExact({ type: 'castSet', commanderId: commander.id, value: Number(casts) }))
+                resetCasts();
+            } finally {
+              setSaving(false);
+            }
           }}
         >
           <Field label="Previous command-zone casts">
@@ -520,12 +593,12 @@ export function CommanderCasts({
               min="0"
               max="999999"
               required
-              disabled={disabled}
+              disabled={disabled || saving}
               value={casts}
               onChange={(e) => setCasts(e.target.value)}
             />
           </Field>
-          <button disabled={disabled}>Correct casts</button>
+          <button disabled={disabled || saving}>{saving ? 'Saving…' : 'Correct casts'}</button>
         </form>
       </details>
     </div>

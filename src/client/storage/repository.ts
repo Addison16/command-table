@@ -31,6 +31,18 @@ const preferencesSchema = z
     haptics: z.boolean(),
     wake: z.boolean(),
     rotations: z.record(z.string(), z.boolean()),
+    artPositions: z
+      .record(
+        z.string().uuid(),
+        z
+          .union([
+            z.number().min(0).max(100),
+            z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) }),
+          ])
+          .transform((position) => (typeof position === 'number' ? { x: 50, y: position } : position)),
+      )
+      .default({})
+      .transform((positions) => Object.fromEntries(Object.entries(positions).slice(-64))),
     tableLayout: z.enum(['upright', 'shared']).default('upright'),
     autoTableLayout: z.boolean().default(true),
     rotationDefaultsVersion: z.literal(1).optional(),
@@ -58,6 +70,7 @@ export const initialProfile = (): Profile => ({
   haptics: false,
   wake: false,
   rotations: {},
+  artPositions: {},
   tableLayout: 'upright',
   autoTableLayout: true,
   rotationDefaultsVersion: 1,
@@ -75,6 +88,8 @@ export class Repository {
   warning = '';
   corrupt: unknown;
   private fallback = new Map<string, unknown>();
+  private savedRoomSignatures = new Map<string, string>();
+  private lastRoomPrune = 0;
   constructor(
     public tabId: string,
     public databaseName = 'mtg-util',
@@ -292,10 +307,20 @@ export class Repository {
     return value ? gameSchema.parse(value) : undefined;
   }
   async saveRoom(view: RoomView) {
+    // Presence and server clock frames are useful live, but do not change the
+    // recoverable game. Never rewrite its large snapshot for those frames.
+    const signature = JSON.stringify(view, (key, value: unknown) =>
+      ['game', 'serverTime', 'connected'].includes(key) ? undefined : value,
+    );
+    if (this.savedRoomSignatures.get(view.id) === signature) return;
     const tx = this.memory ? undefined : this.db!.transaction('records', 'readwrite');
     const records = tx?.store ?? {
       get: (key: string) => this.get(key),
       put: (value: unknown, key: string) => this.put(key, value),
+      getAllKeys: async () => [...this.fallback.keys()],
+      delete: async (key: string) => {
+        this.fallback.delete(key);
+      },
     };
     const previous = (await records.get(`room:${view.id}`)) as RoomView | undefined;
     if (
@@ -304,6 +329,16 @@ export class Repository {
         (previous.revision === view.revision && previous.serverTime > view.serverTime))
     ) {
       await tx?.done;
+      return;
+    }
+    if (
+      previous &&
+      JSON.stringify(previous, (key, value: unknown) =>
+        ['game', 'serverTime', 'connected'].includes(key) ? undefined : value,
+      ) === signature
+    ) {
+      await tx?.done;
+      this.savedRoomSignatures.set(view.id, signature);
       return;
     }
     const parsed = recentRoomSchema.array().safeParse((await records.get('recentRooms')) ?? []);
@@ -327,14 +362,35 @@ export class Repository {
       canReopen: view.hostId === view.me.id,
     };
     await records.put(view, `room:${view.id}`);
-    await records.put(
-      [
-        ...(item.status === 'ended' && (item.recoverUntil ?? 0) <= view.serverTime ? [] : [item]),
-        ...recent.filter((r) => r.id !== view.id),
-      ].slice(0, 10),
-      'recentRooms',
-    );
+    const nextRecent = [
+      ...(item.status === 'ended' && (item.recoverUntil ?? 0) <= view.serverTime ? [] : [item]),
+      ...recent.filter((r) => r.id !== view.id),
+    ].slice(0, 10);
+    await records.put(nextRecent, 'recentRooms');
+    if (!previous || Date.now() - this.lastRoomPrune > 60_000) {
+      const profile = (await records.get('profile')) as Profile | undefined;
+      const keep = new Set([
+        view.id,
+        ...nextRecent.map((room) => room.id),
+        ...(profile?.lastMode === 'room' && profile.roomId ? [profile.roomId] : []),
+      ]);
+      for (const key of await records.getAllKeys()) {
+        if (typeof key !== 'string' || !key.startsWith('room:') || keep.has(key.slice(5))) continue;
+        const pending = await records.get(`pending:${key.slice(5)}`);
+        // Keep unreadable pending records too: cleanup must never lose a change
+        // that still needs reconciliation with the server.
+        if (Array.isArray(pending) ? pending.length > 0 : !!pending) continue;
+        await records.delete(key);
+        await records.delete(`pending:${key.slice(5)}`);
+        this.savedRoomSignatures.delete(key.slice(5));
+      }
+      this.lastRoomPrune = Date.now();
+    }
     await tx?.done;
+    this.savedRoomSignatures.delete(view.id);
+    this.savedRoomSignatures.set(view.id, signature);
+    if (this.savedRoomSignatures.size > 32)
+      this.savedRoomSignatures.delete(this.savedRoomSignatures.keys().next().value!);
   }
   async recentRooms(): Promise<RecentRoom[]> {
     const result = recentRoomSchema.array().safeParse((await this.get('recentRooms')) ?? []);

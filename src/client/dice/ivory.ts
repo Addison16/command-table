@@ -3,6 +3,8 @@ import type { RoundedDie } from './rounded.js';
 import type { VisualDie } from './DiceCanvas.js';
 
 type Point = [number, number];
+export type DiceQuality = 'full' | 'balanced' | 'fast';
+const labelMetrics = new Map<string, { font: string; baseline: number; size: number }>();
 // Solid cast-resin pigments. Lighting changes the finish, not the seat color.
 const pigments: Record<string, Vec> = {
   ivory: [237, 227, 207],
@@ -109,6 +111,7 @@ export function drawIvoryDie(
   rotate: (v: Vec) => Vec,
   die: VisualDie,
   scale: number,
+  quality: DiceQuality = 'full',
 ) {
   const coin = die.sides === 2;
   const pearl = die.color === 'ivory' || !pigments[die.color];
@@ -122,7 +125,7 @@ export function drawIvoryDie(
     polygon(ctx, points);
     const color = diceSurfaceColor(surface.normal, die.color, coin);
     ctx.fillStyle = color;
-    if (surface.normals) {
+    if (surface.normals && quality === 'full') {
       // Blend the actual normals across a curved fillet. Matching endpoint
       // lighting removes the hard polygon bands from a polished rounded edge.
       const quad = points.length === 4;
@@ -138,7 +141,7 @@ export function drawIvoryDie(
       gradient.addColorStop(0.5, color);
       gradient.addColorStop(1, diceSurfaceColor(rotate(endNormal), die.color, coin));
       ctx.fillStyle = gradient;
-    } else if (surface.faceIndex !== undefined) {
+    } else if (surface.faceIndex !== undefined && quality !== 'fast') {
       // Only a slight variation over a flat face: the finish stays smooth
       // while the large-area light falls off across the physical surface.
       const [x, y] = project(surface.center);
@@ -177,27 +180,44 @@ export function drawIvoryDie(
       center[0],
       center[1],
     );
-    if (scale > 34) micrograin(ctx, i);
-    if (coin) coinRim(ctx, face.inradius * 87);
+    if (scale > 34 && quality === 'full') micrograin(ctx, i);
+    if (coin && quality !== 'fast') coinRim(ctx, face.inradius * 87);
     const label = diceFaceLabel(die, i);
-    let fontSize = Math.min(coin ? 80 : 64, face.inradius * (label.length > 1 ? 132 : 150));
-    const fontFamily = coin ? "'Cormorant Garamond', Georgia, serif" : 'Inter, sans-serif';
-    ctx.font = '500 ' + fontSize + 'px ' + fontFamily;
-    fontSize *= Math.min(1, (face.inradius * 145) / ctx.measureText(label).width);
-    ctx.font = '500 ' + fontSize + 'px ' + fontFamily;
+    // Measure in the same baseline used to paint; cached metrics must not
+    // inherit the canvas default from whichever die was drawn first.
+    ctx.textBaseline = 'middle';
+    const metricsKey = `${coin}:${face.inradius}:${label}`;
+    let metrics = labelMetrics.get(metricsKey);
+    if (!metrics) {
+      let size = Math.min(coin ? 80 : 64, face.inradius * (label.length > 1 ? 132 : 150));
+      const family = coin ? "'Cormorant Garamond', Georgia, serif" : 'Inter, sans-serif';
+      const weight = coin ? 500 : 600;
+      ctx.font = `${weight} ${size}px ${family}`;
+      size *= Math.min(1, (face.inradius * 145) / ctx.measureText(label).width);
+      const font = `${weight} ${size}px ${family}`;
+      ctx.font = font;
+      const measured = ctx.measureText(label);
+      metrics = {
+        font,
+        size,
+        baseline: (measured.actualBoundingBoxAscent - measured.actualBoundingBoxDescent) / 2,
+      };
+      if (labelMetrics.size >= 512) labelMetrics.clear();
+      labelMetrics.set(metricsKey, metrics);
+    }
+    ctx.font = metrics.font;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const metrics = ctx.measureText(label);
-    const baseline = (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+    const { baseline, size: fontSize } = metrics;
     // A small dark incision above and a fine reflected lip below make the
     // opaque ink sit inside the face rather than float as outlined lettering.
     ctx.lineWidth = 0.7;
     ctx.strokeStyle = pearl ? 'rgba(47,34,19,.14)' : 'rgba(3,8,15,.35)';
-    ctx.strokeText(label, 0, baseline - 0.3);
+    if (quality !== 'fast') ctx.strokeText(label, 0, baseline - 0.3);
     ctx.fillStyle = pearl ? 'rgba(255,255,247,.5)' : 'rgba(255,250,230,.28)';
-    ctx.fillText(label, 0, baseline + 0.55);
+    if (quality !== 'fast') ctx.fillText(label, 0, baseline + 0.55);
     ctx.fillStyle = pearl ? '#51483c' : '#e9e3d3';
-    if (coin) {
+    if (coin && quality !== 'fast') {
       const metal = ctx.createLinearGradient(0, baseline - fontSize / 2, 0, baseline + fontSize / 2);
       metal.addColorStop(0, pearl ? '#51402b' : '#eee7d2');
       metal.addColorStop(0.5, pearl ? '#655139' : '#e0d6b9');
@@ -205,7 +225,7 @@ export function drawIvoryDie(
       ctx.fillStyle = metal;
     }
     ctx.shadowColor = pearl ? 'rgba(37,25,13,.22)' : 'rgba(3,8,15,.3)';
-    ctx.shadowBlur = 0.45;
+    ctx.shadowBlur = quality === 'fast' ? 0 : 0.45;
     ctx.shadowOffsetY = -0.35;
     ctx.fillText(label, 0, baseline);
     ctx.restore();

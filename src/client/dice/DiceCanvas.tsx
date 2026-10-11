@@ -1,8 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { dot, orient, rollSpin, type Vec } from './geometry.js';
+import { dot, geometry, orient, type Vec } from './geometry.js';
 import { roundedGeometry, type RoundedDie } from './rounded.js';
-import { drawIvoryDie } from './ivory.js';
-import { makeDieMotion, sampleDieMotion } from './motion.js';
+import { drawIvoryDie, type DiceQuality } from './ivory.js';
+import {
+  makeDieMotion,
+  restingPose,
+  sampleDieMotion,
+  type DieMotionImpact,
+  type DieMotionTrack,
+} from './motion.js';
 import { dieAnchor, diceColumns, type SafeInsets } from './layout.js';
 
 export type VisualDie = {
@@ -14,6 +20,18 @@ export type VisualDie = {
   symbol?: boolean;
 };
 type Point = [number, number];
+const HEIGHT_SCALE = 0.07;
+const HEIGHT_LIFT = 0.42;
+const fastMeshes = new Map<number, RoundedDie>();
+function fastGeometry(sides: number) {
+  let mesh = fastMeshes.get(sides);
+  if (!mesh) {
+    const faces = geometry(sides);
+    mesh = { faces, surfaces: faces.map((face, faceIndex) => ({ ...face, faceIndex })) };
+    fastMeshes.set(sides, mesh);
+  }
+  return mesh;
+}
 const smooth = (n: number) => {
   const p = Math.max(0, Math.min(1, n));
   return p * p * (3 - 2 * p);
@@ -24,17 +42,22 @@ export function DiceCanvas({
   seed,
   animate,
   onFinish,
+  onImpacts,
   resultSpace = 300,
 }: {
   dice: VisualDie[];
   seed: string;
   animate: boolean;
   onFinish: () => void;
+  /** Every strike on the table in this throw, reported once before it starts. */
+  onImpacts?: (impacts: DieMotionImpact[]) => void;
   resultSpace?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const finish = useRef(onFinish);
   finish.current = onFinish;
+  const impacts = useRef(onImpacts);
+  impacts.current = onImpacts;
   useEffect(() => {
     const element = canvas.current!;
     const context = element.getContext('2d');
@@ -49,6 +72,8 @@ export function DiceCanvas({
     let frame = 0;
     let stopped = false;
     let completed = false;
+    let quality: DiceQuality = dice.length >= 12 ? 'fast' : dice.length >= 6 ? 'balanced' : 'full';
+    let slowFrames = 0;
     let hash = Array.from(seed).reduce((n, c) => Math.imul(n ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0;
     const random = () => {
       hash ^= hash << 13;
@@ -56,12 +81,17 @@ export function DiceCanvas({
       hash ^= hash << 5;
       return (hash >>> 0) / 4294967296;
     };
-    const bodies = dice.map((die) => {
-      const dieSeed = random();
-      return { seed: dieSeed, motion: makeDieMotion(Math.floor(dieSeed * 4294967296), die.sides === 2) };
+    // A still result needs no throw.
+    const motions: (DieMotionTrack | undefined)[] = dice.map((die) => {
+      const dieSeed = Math.floor(random() * 4294967296);
+      return animate ? makeDieMotion(dieSeed, die.sides) : undefined;
     });
-    const duration = Math.max(0.001, ...bodies.map((body) => body.motion.duration));
-    const meshCache = new Map<RoundedDie, { vertices: Vec[]; anchor: Point; bottom: number }>();
+    const duration = Math.max(0.001, ...motions.map((motion) => motion?.duration ?? 0));
+    if (animate)
+      impacts.current?.(
+        motions.flatMap((motion) => [...(motion?.impacts ?? [])]).sort((a, b) => a.time - b.time),
+      );
+    const meshCache = new Map<RoundedDie, { anchor: Point; bottom: number }>();
     const perspective = (v: Vec): Point => {
       const factor = 4.8 / (4.8 - v[2]);
       return [v[0] * factor, -v[1] * factor];
@@ -81,7 +111,7 @@ export function DiceCanvas({
         const bottom = Math.max(
           ...vertices.map((v) => perspective(orient(v, base, [0, 0, 0]))[1] - anchor[1]),
         );
-        info = { vertices, anchor, bottom };
+        info = { anchor, bottom };
         meshCache.set(mesh, info);
       }
       return info;
@@ -115,8 +145,8 @@ export function DiceCanvas({
         Math.min(dice.length === 1 ? 90 : 63, (trayWidth / columns) * 0.34, cellRadius),
       );
       const renders = dice.map((die, index) => {
-        const body = bodies[index];
-        const pose = sampleDieMotion(body.motion, elapsed);
+        const motion = motions[index];
+        const pose = motion ? sampleDieMotion(motion, elapsed) : restingPose;
         const rowColumns = Math.min(columns, dice.length - Math.floor(index / columns) * columns);
         const [targetX, targetY] = dieAnchor(
           center,
@@ -127,26 +157,23 @@ export function DiceCanvas({
           elapsed,
           duration,
         );
-        const spin = rollSpin(1 - pose.rotation, body.seed);
-        if (die.sides === 2) {
-          spin[0] *= 1.5;
-          spin[1] *= 0.1;
-          spin[2] *= 0.24;
-        }
-        const scale = radius * (1 + pose.z * 0.025);
-        const mesh = roundedGeometry(die.sides, radius < 24 ? 2 : 4);
+        // A die nearer the overhead camera looks larger.
+        const scale = radius * (1 + pose.z * HEIGHT_SCALE);
+        // At crowded sizes, subpixel fillets add cost without visible detail.
+        // Keep the closed solid and recorded faces; only its finish is simpler.
+        const mesh =
+          quality === 'fast'
+            ? fastGeometry(die.sides)
+            : roundedGeometry(die.sides, quality === 'balanced' || radius < 24 ? 2 : 4);
         const base = mesh.faces[0];
         const info = meshInfo(mesh);
-        // Precompute the rotation matrix once, rather than trigonometry for
-        // every point, fillet and lighting normal in each animation frame.
-        const axes = (
-          [
-            [1, 0, 0],
-            [0, 1, 0],
-            [0, 0, 1],
-          ] as Vec[]
-        ).map((v) => orient(v, base, spin));
-        const rotationRows: Vec[] = [0, 1, 2].map((axis) => [axes[0][axis], axes[1][axis], axes[2][axis]]);
+        // Combine the simulated attitude with the result face's own frame once,
+        // rather than for every point, fillet and lighting normal in each frame.
+        const rotationRows = pose.rotation.map((row): Vec => [
+          row[0] * base.u[0] + row[1] * base.v[0] + row[2] * base.normal[0],
+          row[0] * base.u[1] + row[1] * base.v[1] + row[2] * base.normal[1],
+          row[0] * base.u[2] + row[1] * base.v[2] + row[2] * base.normal[2],
+        ]);
         const rotate = (v: Vec): Vec => [
           dot(v, rotationRows[0]),
           dot(v, rotationRows[1]),
@@ -162,12 +189,12 @@ export function DiceCanvas({
           }
           return point;
         };
-        const support = Math.max(...info.vertices.map((v) => local(v)[1]));
+        // The table is seen from above: travel across it moves the die on
+        // screen, and height lifts it away from the shadow it leaves behind.
         const x = targetX + pose.x * radius;
-        const floorY = targetY + pose.y * radius + info.bottom * radius;
-        // The lowest vertex stays on the contact plane while the solid rolls.
-        // Only ballistic elevation separates the die from its fixed shadow.
-        const y = floorY - support * scale - pose.z * radius * 0.48;
+        const groundY = targetY - pose.y * radius;
+        const floorY = groundY + info.bottom * radius;
+        const y = groundY - pose.z * radius * HEIGHT_LIFT;
         const project = (v: Vec): Point => {
           const p = local(v);
           return [x + p[0] * scale, y + p[1] * scale];
@@ -175,8 +202,11 @@ export function DiceCanvas({
         const shadowY = floorY - info.bottom * radius * 0.55;
         return { die, pose, x, floorY, shadowY, scale, mesh, rotate, project };
       });
-      renders.sort((a, b) => a.floorY - b.floorY);
+      // Dice in the air pass over the ones already on the table.
+      renders.sort((a, b) => a.pose.z - b.pose.z || a.floorY - b.floorY);
+      const arriving = animate ? smooth(elapsed / 0.12) : 1;
       for (const { die, pose, x, floorY, shadowY, scale, mesh, rotate, project } of renders) {
+        ctx.globalAlpha = arriving;
         ctx.save();
         // The camera sees the result face from above. Its table shadow extends
         // beneath the solid, rather than suggesting a die balanced on a tip.
@@ -204,10 +234,11 @@ export function DiceCanvas({
           ctx.fill();
           ctx.restore();
         }
-        drawIvoryDie(ctx, mesh, project, rotate, die, scale);
-        if (die.name && showNames) {
+        drawIvoryDie(ctx, mesh, project, rotate, die, scale, quality);
+        ctx.globalAlpha = 1;
+        if (die.name && showNames && pose.settle > 0) {
           ctx.save();
-          ctx.globalAlpha = smooth((0.1 - pose.rotation) / 0.1);
+          ctx.globalAlpha = smooth(pose.settle);
           ctx.font = `600 ${labelHeight === 18 ? 10 : 12}px Inter, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -238,7 +269,10 @@ export function DiceCanvas({
         bottom: parseFloat(style.paddingBottom) || 0,
         left: parseFloat(style.paddingLeft) || 0,
       };
-      const ratio = Math.min(devicePixelRatio || 1, 2);
+      const ratio = Math.min(
+        devicePixelRatio || 1,
+        quality === 'fast' ? 1 : quality === 'balanced' ? 1.5 : 2,
+      );
       element.width = Math.round(width * ratio);
       element.height = Math.round(height * ratio);
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -248,10 +282,18 @@ export function DiceCanvas({
     function tick(now: number) {
       if (stopped) return;
       const elapsed = animate ? Math.min(duration, (now - start) / 1000) : duration;
-      if (!document.hidden) draw(elapsed);
+      if (!document.hidden) {
+        const began = performance.now();
+        draw(elapsed);
+        slowFrames = performance.now() - began > 24 ? slowFrames + 1 : Math.max(0, slowFrames - 1);
+        if (slowFrames >= 2 && quality !== 'fast') {
+          quality = quality === 'full' ? 'balanced' : 'fast';
+          slowFrames = 0;
+          resize();
+        }
+      }
       if (elapsed < duration) frame = requestAnimationFrame(tick);
       else {
-        draw(duration);
         completed = true;
         finish.current();
       }
@@ -259,11 +301,16 @@ export function DiceCanvas({
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(element);
+    const visible = () => {
+      if (completed && !document.hidden) draw(duration);
+    };
+    document.addEventListener('visibilitychange', visible);
     frame = requestAnimationFrame(tick);
     return () => {
       stopped = true;
       cancelAnimationFrame(frame);
       observer.disconnect();
+      document.removeEventListener('visibilitychange', visible);
     };
   }, [dice, seed, animate, resultSpace]);
   return <canvas className="dice-canvas" ref={canvas} aria-hidden="true" />;

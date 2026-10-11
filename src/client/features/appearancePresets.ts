@@ -71,3 +71,34 @@ export const defaultAppearance = {
   accentColor: 'theme',
   tableFinish: 'glow',
 } as const;
+
+export const tableLooks = [
+  {
+    name: 'Gilded night',
+    description: 'Warm gold on sculpted marble',
+    colorTheme: 'classic',
+    accentColor: 'theme',
+    tableFinish: 'gilded',
+  },
+  {
+    name: 'Celestial spell',
+    description: 'Moonlit violet and constellations',
+    colorTheme: 'arcane',
+    accentColor: 'violet',
+    tableFinish: 'celestial',
+  },
+  {
+    name: 'Verdant haven',
+    description: 'Emerald light and living leaves',
+    colorTheme: 'forest',
+    accentColor: 'green',
+    tableFinish: 'verdant',
+  },
+  {
+    name: 'Dragon’s hearth',
+    description: 'Copper warmth and golden embers',
+    colorTheme: 'ember',
+    accentColor: 'copper',
+    tableFinish: 'tabletop',
+  },
+] as const;

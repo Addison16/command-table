@@ -165,10 +165,3 @@ export function orient(point: Vec, face: Face, spin: Vec): Vec {
   [x, z] = [x * Math.cos(b) + z * Math.sin(b), -x * Math.sin(b) + z * Math.cos(b)];
   return [x * Math.cos(c) - y * Math.sin(c), x * Math.sin(c) + y * Math.cos(c), z];
 }
-
-// The result face must finish exactly square to the viewer, with level edges
-// and upright lettering. Remaining angular travel comes from the motion track.
-export function rollSpin(progress: number, seed: number): Vec {
-  const amount = 1 - Math.max(0, Math.min(1, progress));
-  return [amount * (6.2 + seed * 4), amount * (8.6 + seed * 4.5), amount * (2.2 + seed * 2.4)];
-}

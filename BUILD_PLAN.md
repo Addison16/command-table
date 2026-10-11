@@ -1,490 +1,475 @@
-# MTG Util — product and implementation handoff
+# Command Table — product and implementation handoff
 
-Prepared for GPT Sol on September 15, 2026.
+This document describes Command Table as it is built in this repository: the product decisions, how each feature behaves, how the code is organized, and how changes are verified and shipped. It replaces the original build specification of September 15, 2026, which described an empty folder and handed the build to another agent. That version remains in Git history (first added in commit `0f455e3`). Where the built app intentionally differs from that specification, section 14 records the change.
 
-This is the build specification, not an existing implementation. The folder had no application code when inspected. Build the application described below, verify it, and document how to run it locally and through Docker. Do not stop after making a visual mockup or scaffold.
+Read this before changing the app. The detailed references are:
+
+| Document | Contents |
+| --- | --- |
+| [README.md](README.md) | Docker installation and updates, how to play, what is remembered, development and checks |
+| [docs/architecture.md](docs/architecture.md) | Detailed contracts for the domain, storage, synchronization, retention, PWA and operations |
+| [docs/deployment.md](docs/deployment.md) | Docker hosting, configuration, HTTPS proxies, backup/restore, updates and publishing |
+| [docs/testing.md](docs/testing.md) | Dated verification record, reproduction commands and the physical-device checklist |
+| [docs/progress.md](docs/progress.md) | Milestone and release history |
+| [docs/assets.md](docs/assets.md) | Fonts, artwork, icons and license provenance |
+| [docs/releases/](docs/releases/) | Notes for each published version |
+
+**Status.** The latest GitHub release is [v0.3.2.1](https://github.com/Addison16/command-table/releases/tag/v0.3.2.1). The current main branch preserves its Archenemy preset, centered dice layout, commander suggestion fixes and home game lists, and adds elimination and winner screens, physically simulated dice, coordinated table looks, artwork framing, and the server reliability work in sections 8–10 (schema 3, bounded receipts, shared traffic budgets, automatic backups and private diagnostics). Docker installation templates are available with v0.3.1; these newer source changes await a Docker release. Publishing a new release or image requires a separate, explicit request from the owner.
 
 ## 1. Product goal and settled decisions
 
-Create a beautiful, fast browser companion for playing physical Magic: The Gathering with friends. Its central job is tracking life and common game information for up to eight players. It must be pleasant to leave on the table for an entire game: readable at a glance, easy to touch, visually distinctive, and dependable after refresh or interruption.
+Command Table is a beautiful, fast browser companion for playing physical Magic: The Gathering with friends. Its central job is tracking life and common game information for one to eight players. It is meant to sit on the table for an entire game: readable at a glance, easy to touch, visually distinctive, and dependable after a refresh or interruption.
 
-**Audience priority: the user expects approximately 99% mobile usage, specifically iPhone and Android browsers. Design, implementation tradeoffs, and acceptance testing must start with phones. Desktop is a secondary adaptation.** The complete experience must work in an ordinary mobile browser tab; installing the app is optional.
+**Audience priority: about 99% of use is on iPhone and Android browsers. Design, implementation tradeoffs and acceptance testing start with phones; desktop is a secondary adaptation.** The complete experience works in an ordinary mobile browser tab. Installing the app is optional.
 
-The user explicitly requested **both play modes as options**:
+There are two play modes:
 
 | Mode | Experience | Where the authoritative game lives |
 | --- | --- | --- |
-| One device | One phone/tablet manages the whole table; everyone can use its controls. | That browser's local storage database. |
-| Shared room | Host creates a room; friends join by code, link, or QR code and see live updates. The host can still manage all seats from one device. | The self-hosted server's database. |
+| One device | One phone or tablet manages the whole table; everyone uses its controls. Works offline and needs no server session. | That browser's IndexedDB database |
+| Shared room | The host creates a room; friends join by code, link or QR and see live updates. Each approved player controls their own seat; the host also manages the room and table controls. | The self-hosted server's SQLite database |
 
-Both modes belong in the first complete release. Implement one-device play first as a development milestone, then finish shared rooms before calling the requested application complete. Accounts are deferred. Local mode must not depend on a guest session or server connection.
+Settled decisions:
 
-Other decisions:
-
-- Support 2–8 normal seats and an optional 1-seat practice setup.
-- Default quick start: four players, Commander, 40 life. Offer a clearly visible two-player, 20-life option.
-- iPhone Safari and Android Chrome are primary release targets; include other common mobile browsers in compatibility checks. Tablets and desktop browsers must also work.
-- Make life, poison, commander damage, commander tax, dice, and first-player selection complete features.
-- Hide less-used counters behind player details and a utilities menu.
-- Remember the last mode, game, seat settings, and display preferences without account setup.
-- Use an original arcane fantasy design influenced by MTG's colors and tabletop atmosphere.
-- Develop and test without requiring Docker. Deliver Docker packaging and publication instructions afterward.
-- Use `MTG Util` as the working name. Keep the name and branding easy to replace.
+- 2–8 normal seats plus a 1-seat practice mode.
+- Home offers **Quick 4 · 40 life** (Commander) as the primary action and **Quick 2 · 20 life** (commander tools off). **Set up a game** opens full setup.
+- iPhone Safari and Android Chrome are the primary targets. Other mobile browsers, tablets and desktop browsers must also work.
+- Complete features: life, poison, per-commander damage and tax, 3D dice and coin, first-player selection, opt-in turn tracking, a game timer, group life changes (one device), end/reopen/rematch, game recaps, and optional commander artwork, card text and rulings.
+- No accounts, analytics, hardware fingerprinting or IP-based identity. Games resume from the same browser profile at the same site address.
+- Warnings never eliminate anyone. Command Table is a manual tracker, not a rules engine; elimination and rules decisions stay with the players.
+- The design is an original arcane fantasy style influenced by Magic's colors and tabletop atmosphere. Card artwork appears only when a player chooses it from Scryfall.
+- The product name is **Command Table**. Internal identifiers keep the original `mtg-util` names for compatibility (section 8).
+- Hosts run the published Docker image; Docker/Compose is the primary installation and update path in all documentation. Direct Node/npm setup is for contributors.
+- Since v0.1.2 the project is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). It is unofficial Fan Content under the Wizards of the Coast Fan Content Policy.
 
 ## 2. Account-free identity and resuming games
 
-### What “remember this device” means
+### What "remember this device" means
 
-An ordinary browser application cannot read a device's MAC address. Do not implement hardware fingerprinting, IP-based identity, or a fingerprinting service. Generate a random local installation ID and store it with the browser's preferences and local games. This ID is an organizational key, not a credential.
+A browser cannot read a MAC address, and the app does not try to identify hardware. On first use it generates a random local installation ID and stores it with preferences and local games. The ID organizes local data; it never grants room or host access.
 
-The experience is: open the same site in the same browser profile and resume where you left off. A different browser, private session, cleared storage, or changed site address can start fresh. Browser storage is scoped to the site's origin, which includes scheme, host, and port. Include export/import so users can move a local game between addresses or browsers. [MDN: client-side storage](https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Client-side_APIs/Client-side_storage), [MDN: storage limits and eviction](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
+The experience is: open the same site in the same browser profile and resume where you left off. A different browser, private session, cleared storage or a changed scheme/host/port starts fresh, because browser storage is scoped to the origin. **Export game backup** and import move a local game between addresses or browsers.
 
-On launch:
+On launch the app:
 
-1. Hydrate and validate saved data before displaying setup or allowing mutations.
-2. Resume a valid local game directly with a brief, nonblocking “Game restored” message.
-3. For a saved room, reconnect with the guest session and fetch current server state before enabling controls.
-4. If the room is unavailable, show its last confirmed state with a clear connection message, plus options to retry or open local play.
-5. If no usable game exists, show the mode selector and quick setup.
+1. Hydrates and validates saved data before showing setup or allowing changes. Unreadable or future-version data is preserved, and Home offers **Export recovery data**, **Restore checkpoint** or an explicitly confirmed **Start a fresh local game**.
+2. Resumes a valid local game directly.
+3. For a saved room, reauthenticates and fetches the current server state before enabling controls.
+4. If the room is unreachable, shows its last confirmed state with a connection message, **Reconnect now**, and **Continue a copy on this device**.
+5. Otherwise shows Home.
 
-Provide an always-accessible New game action. Starting a new game must not silently overwrite the current game; confirm replacing it or archive a bounded recent-game snapshot first. Keep the last ten completed/local games by default, with explicit deletion controls.
+Home lists up to ten unfinished local and shared games with **Resume**, and recently ended games for 24 hours with **Reopen** and **View final game**. The Game menu keeps up to ten archived local games with delete controls. **New game** asks **One phone** or **Multiple phones**, saves the outgoing game, and opens a fresh setup with default players.
 
 ### Guest identity in shared rooms
 
-Joining or creating a room creates a server-issued anonymous guest session. Use a random 256-bit opaque token in a persistent `HttpOnly`, `SameSite=Lax`, `Path=/` cookie with no `Domain` attribute; set `Secure` for HTTPS deployments. Store a hash of the token server-side, its expiry, and room memberships. Use a configurable rolling lifetime, initially 90 days. Renew the cookie and server expiry together through a same-origin HTTP session endpoint on launch, foreground/reconnect, and periodically during active use; WebSocket messages cannot refresh an HttpOnly cookie. Never renew expired/revoked authority as though it were still valid. A local installation ID must never grant room or host access. [MDN: Set-Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie).
+Creating or joining a room creates an anonymous guest session: a random 256-bit opaque token in a persistent `HttpOnly`, `SameSite=Lax`, `Path=/` cookie with no `Domain`, marked `Secure` on HTTPS. Only token hashes are stored. Sessions use a configurable rolling lifetime (90 days by default). The cookie and server expiry renew together over HTTP at launch, on foreground and reconnect, and every 15 minutes during play. Expired or revoked authority is never renewed; it requires a new join. A guest session that belongs to no room is removed a day after its last use.
 
-Save room references locally, but derive permissions from the server. A returning guest can recover their assigned seat while their session and room still exist. Losing the cookie means a new guest identity: the host can approve a replacement guest for that seat. The application cannot promise recovery of a lost host identity without a recovery mechanism; offer host transfer to another joined guest before leaving. Do not give host powers to whoever enters a room code first after a disconnect.
+Room references are saved locally, but permissions always come from the server. A returning guest recovers their seat while their session and the room exist. Losing the cookie means a new guest identity, and the host can approve them as a replacement for their old seat. A lost host credential cannot be recovered with the invitation code, so the host should transfer host before leaving. If the host's session expires while the room is still active, the longest-seated approved member becomes host.
 
-Settings copy should be brief: “Games and preferences are remembered in this browser. Export a backup before clearing site data or changing browsers.” Shared-room settings also display the room's retention period. Do not promise permanent storage.
+Settings say: "Games and preferences are remembered in this browser. Export a backup before clearing site data or changing browsers." Room details show the room's retention period. The app never promises permanent storage.
 
-## 3. Required screens and primary flows
+## 3. Screens and primary flows
 
-### Home / mode selector
+### Home
 
-Present two polished choices: **One device** and **Shared room**. Shared room offers Create and Join. Keep returning players one action away from a recent game if they leave the automatically restored board.
+A hero with the mana emblem. **Quick 4 · 40 life** is the main button, beside **Create room** and **Join room**, then **Set up a game** and **Quick 2 · 20 life**. The start, create and join actions fit on the first small-phone screen. Below them are Recent games and **Display & browser settings**. Tapping the **Command Table** logo during play returns Home.
 
 ### Setup
 
-Choose player count, preset, starting life, seat names, colors, enabled trackers, and one or two commander labels per player. Use sensible names such as Player 1 initially. Most customization is optional; Quick start should require no typing. Allow custom starting life and clearly labeled house-rule thresholds through advanced setup.
+Players 1–8 (1 is practice mode), **Game preset** (Commander, Archenemy, 20-life game, Custom) and **Starting life**. The optional **Names, colors & commanders** section has one commander or **Two commanders / partners** per seat, each with optional artwork. **Trackers & house rules** covers the poison and commander toggles and their warning thresholds. Defaults are Player 1–8 with the first eight palette colors, 40 or 20 life, a poison warning at 10 and a commander-damage warning at 21. Room setup adds **Your player**, because the first seat belongs to the host.
 
-Presets: Commander (40 life, poison and commander tools enabled), 20-life game (commander tools off), and Custom. These configure a tracker; they do not enforce deck legality or adjudicate rules. Do not label an arbitrary 30-life setup as full Two-Headed Giant support.
+**Archenemy** requires at least two players. Setup selects the archenemy and separate starting life for that seat (60 by default) and the team (40 each). The archenemy's scheme deck tracks named and ongoing schemes. Turn tracking alternates the archenemy and the team's shared turn, and group life changes target only the opposing side. A team victory is announced on the board and remains shared; the individual winner screen applies to the archenemy or the last player in games without teams.
 
 ### Game board
 
-The board dominates the viewport. Each player panel has a name, enormous life total, obvious minus/plus controls, and a Player details affordance. Show enabled poison and commander warning badges when space permits. A compact fixed toolbar provides Utilities, Undo, and Game menu. Shared mode also has a small connection/room indicator.
+The board dominates the viewport. Each player tile shows the name, a large life total, and minus/plus controls that repeat when held. An accumulated change label such as `−7` appears briefly. When commander tools are on, **Damage** and **Tax** shortcuts sit under the life total, even at zero. Damage shows the highest total received from one commander, and partners get **Tax I / Tax II**. Status badges appear for poison above zero, warnings, elimination and the current turn. Chosen commander artwork fills the panel behind the controls.
 
-Player details opens an upright bottom sheet on phones or side panel on larger displays. It contains poison, commander damage received, that player's command-zone cast counters, optional counters, customization, and elimination controls. All overlays remain upright even if the player's tile faces the other side of the table.
+The toolbar holds **Utilities**, **Undo**, **Next turn** (only when turn tracking is on) and **Game menu**. Shared rooms add a connection indicator and a **Table / My seat** switch. **My seat** enlarges the assigned player's controls and shows the rest of the table compactly.
+
+### Player details
+
+Opened from a player's name, as a bottom sheet that stays upright whichever way the tile faces:
+
+- **Edit player & commanders**: name, color, commander labels and artwork, saved together with one **Save changes** and undone as one entry. Recorded damage and casts are kept.
+- Exact life, poison and any legacy manual counters.
+- Commander damage received: **Record combat damage**, which can also subtract life, and **Correct recorded totals**, which changes damage only.
+- Command-zone casts per commander, with **Next cast: +N** and **Correct casts**.
+- **View commander**, the card reader described in section 6.
+- **Artwork framing on this device**, with portrait and landscape previews.
+- Seat rotation, plus **Eliminate player** and **Restore player**.
+
+Exact-value drafts stay in their fields until the save is confirmed, and a rejected correction keeps its draft for review.
+
+### Utilities, Game menu and Settings
+
+- **Utilities** ("A little luck & magic"): roll dice and flip a coin for a chosen player or the table, **Group life change**, **Who goes first?**, recent rolls with replay, the turn-tracking toggle and current player, and the game timer.
+- **Game menu** ("Around the table"): table layout, game history (with **Redo** in one-device games), **Share game recap**, display and preferences, **Room & players** in rooms, export and import, **Rematch · same seats**, **New game · change setup**, **End game**, archived games, tab takeover, and **Continue a copy on this device** in rooms.
+- **Settings** ("Your table, your way"): appearance, table layout, effects level, sound with **Test dice sound**, haptics, keep the screen awake, fullscreen, home-screen installation help, the storage note and the Fan Content notice.
 
 ### Shared-room lobby and participation
 
-Use Jackbox as a reference for the low-friction join experience. Its official instructions describe joining through a browser with a room code and display name without a player login; its QR flow can prefill the code. Borrow this interaction pattern while keeping MTG Util's own visuals and game behavior. [Jackbox: joining a game](https://support.jackboxgames.com/hc/en-us/articles/15794759479959-How-do-I-join-a-game), [Jackbox: accounts and display names](https://support.jackboxgames.com/hc/en-us/articles/15794759347735-Do-games-require-an-account-or-subscription-to-play), [Jackbox: QR joining](https://www.jackboxgames.com/blog/how-to-play-party-pack-nine-remotely).
+The join flow is modeled on low-friction party games such as Jackbox: a browser, a room code and a display name, with no login or app install.
 
-The intended mobile flow is **Create room → show code/QR → friends enter a display name → claim/approve seats → play**. Remember each guest's preferred display name locally. A QR/link fills in the room code automatically. Keep the join screen to one short form with a prominent Join button, followed by seat selection. The host runs entirely in this web app; a dedicated TV, console, purchased host game, or native application is unnecessary. A room code is valid on the specific self-hosted instance that created it, so show the site's address with the code and include the full address in its QR link.
+**Create room → choose table size and your player → share code/QR → friends enter a name and choose their player and commanders → host approves seats → play.**
 
-The host sets up seats and shares a join URL with an 8-character random room code. Use an unambiguous alphabet, ignore typing case/hyphens, and regenerate on collision. Generate the QR code locally. Friends scan it with their normal phone camera; an in-app camera scanner is unnecessary.
+- Room codes are 8 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`. They are displayed as two groups of four, accept any case, spaces or hyphens, and are regenerated on collision. A code only works on the instance that created it, so the join sheet shows the site address.
+- The **Invite your table** sheet shows the code, a locally generated QR code, and the join link `PUBLIC_ORIGIN/?join=CODE`, which prefills the code. Guests use their normal phone camera; there is no in-app scanner.
+- Joining creates a pending participant who sees seat availability and their own request, never the game. In the lobby ("There's a seat for you") a guest picks a seat, their player name and optionally one or two commanders with artwork, then requests the seat. Requests survive refresh and server restarts, and **Update request** revises them.
+- The host previews each request and taps **Approve seat**, or rejects it or replaces a guest. Approval is atomic: a partial unique index allows one approved member per seat. It applies the requested profile without resetting life, damage, casts or the timer.
+- **People at the table** offers **Transfer host**, **Release seat**, **Remove guest** and seat replacement. Removing or replacing someone revokes their membership and closes their sockets. Transferring host does not swap seats.
+- The host can **Lock joining** and **Rotate invitation code**; existing members keep access.
+- Room details show expiry, **Previous matches** (exports of up to ten final match snapshots), actions awaiting confirmation and notices about set-aside actions.
 
-Joining creates a pending participant. They request a seat and the host approves it with one tap. Seat assignment is atomic: simultaneous requests cannot give the same seat to two guests. Host-controlled seats may remain unclaimed. This permits a shared phone plus several individual phones in the same game.
-
-Opening a join link preserves existing local games. Pending guests see seat availability and their request status, including approval, rejection, and seat-taken outcomes, without receiving the live game snapshot. Each guest occupies at most one seat; the host may also occupy a seat while retaining host powers. Separate Release/reassign seat from Transfer host: transferring host does not exchange seats. Replacing a guest who lost their browser session revokes the former membership before granting the replacement control.
-
-Default permissions:
+Permissions are enforced on the server for HTTP and WebSocket alike:
 
 | Action | Host | Approved player | Pending participant |
 | --- | --- | --- | --- |
-| View board/history | Yes | Yes | Lobby only |
-| Edit life/counters/damage received | Every seat | Own seat | No |
-| Edit commander cast counts | Every commander | Own commanders | No |
-| Use ordinary dice/coin tools | Yes | Yes | No |
-| Set first player, reset/end game, change global markers/settings | Yes | No | No |
-| Approve seats, remove guests, transfer host, lock joining | Yes | No | No |
+| View the board, history and any player's commander card | Yes | Yes | Lobby only |
+| Edit life, poison, damage received, casts, own player name/color/commanders | Own seat only | Own seat only | No |
+| Roll dice/coin, d20 for everyone, choose a first player | Yes | Yes | No |
+| Turn tracking, current turn, timer, end, reopen, rematch | Yes | No | No |
+| Approve/reject/replace seats, release, remove, transfer host, lock joining, rotate code | Yes | No | No |
+| Undo | Their own latest action, when they still own every affected seat/commander; also their own table-control actions | Their own latest eligible action | No |
+| Group life change | Not available in rooms | Not available in rooms | No |
 
-Optionally enable **Friends can edit every seat** as a host-controlled room setting. This broadens numerical seat editing, not host administration. Show which mode is active. Enforce all permissions on the server, including WebSocket messages.
-
-All joined devices can switch between Table view and My seat view. Table view shows every seat; My seat emphasizes the assigned player's controls with a compact overview of everyone else. Facing rotations are local presentation preferences, never a room-wide forced rotation. Show connected/reconnecting indicators without confusing a disconnected guest with an eliminated player.
-
-Keep the same shareable room across rematches; give each match a new game ID. Lock joins and rotate the invitation code when requested. Removing a guest revokes their membership and active sockets. The server remains available when the host's phone sleeps; host status does not transfer automatically.
+The same room is kept across rematches; each match gets a new game ID. Presence (connected/reconnecting) is transient and never confused with elimination. The room stays available when the host's phone sleeps.
 
 ## 4. Game behavior and rules-aware tracking
 
 ### Life and input
 
-- Tap minus/plus for −1/+1 with immediate feedback. Offer ±5 and exact adjustment/set in a sheet.
-- Press-and-hold repeats after approximately 350 ms. Keep the repetition rate predictable; a larger-step mode must be visibly labeled. Persist/submit every actual increment, not only the final pointer release.
-- Cancel repeats on release, pointer cancellation, lost capture, opening a sheet, backgrounding, navigation, and connection loss. Prevent a release from firing an extra click after a hold.
-- Track simultaneous touches separately so two players can adjust different seats on a shared tablet.
-- Allow negative life. Validate all numbers as bounded safe integers; use practical application limits such as life −999,999 through 999,999 and counters 0 through 999,999. These are input/storage limits, not claimed MTG rules.
-- Briefly show an accumulated change label such as `−7` without hiding the total or blocking another tap.
+- A tap is −1/+1 with immediate feedback. A hold repeats after 350 ms, then every 130 ms. Every increment is saved immediately, and one uninterrupted hold forms one undo group.
+- Holds cancel on release, pointer cancellation, lost capture, opening a sheet, window blur or backgrounding, navigation and connection loss. Each pointer is tracked separately, so two players can hold different seats on a shared tablet.
+- Exact values are set in player details. Negative life is allowed. Numbers are bounded safe integers: life −999,999 to 999,999 and counters 0 to 999,999. These are storage limits, not Magic rules.
 
-### Poison and loss indicators
+### Poison, warnings and elimination
 
-Poison is a separate nonnegative counter. Default its warning threshold to 10, including Commander. Life at or below zero, poison at its threshold, and qualifying commander damage should produce warnings rather than forcibly removing a player. Cards and house rules can change outcomes, so elimination is manual and reversible. [Wizards: Comprehensive Rules, especially 101 and 704](https://magic.wizards.com/en/rules).
+Poison is a separate nonnegative counter. Life at or below zero, poison at its threshold (10 by default) and 21 damage from one commander (by default) produce warnings, never automatic elimination. Infect, toxic and replacement effects are never inferred.
 
-An eliminated tile stays in place and is dimmed, preserving layout and history. Require an explicit Restore player action to resume normal edits. Exclude eliminated players from first-player selection by default. If the player holds a global marker or the current-turn highlight, keep that state visible and prompt the host/local operator to reassign or clear it; do not silently infer rules outcomes.
+**Eliminate player** is manual and reversible with **Restore player** or Undo. An eliminated tile stays in place, dimmed, and is excluded from first-player selection, turn choice and group life targets. Eliminating a player shows a short non-blocking notice on every device. When exactly one player remains in a game of two or more, a winner screen names them and offers **Rematch** and **End game** (one device, or the room's host) and **Back to the table**. Both notices are derived from confirmed snapshots, appear only for the same match, are driven by timers so they work with motion off, and never change the saved game.
 
 ### Commander damage
 
-Use `damageReceived[recipientPlayerId][commanderId]`. Commander IDs represent individual commanders and survive renamed players, reordered seats, zone changes, and changes in control. Include the recipient's own commander among possible sources. Never store only one damage total per opposing player.
+Damage is stored as `damageReceived[recipientId][commanderId]`. Commander IDs identify individual commanders and survive renames, seat changes and partners. Partners have separate damage totals and separate cast counts.
 
-The normal warning threshold is 21 combat damage from one commander over the game; gaining life does not erase this history. Partner commanders have separate damage totals and separate command-zone cast counts. [Wizards: Commander](https://magic.wizards.com/en/formats/commander), [Wizards: Commander Masters release notes](https://magic.wizards.com/en/news/feature/commander-masters-release-notes).
+**A player's own commanders are not damage sources.** The shared reducer rejects `damage` and `damageSet` for that pairing in local games and rooms. Older saves keep any stored self-damage, but it no longer counts toward displayed totals or warnings.
 
-In the recipient's damage sheet, group sources by their owner and label the commanders individually. At eight players with two commanders each, one recipient can have sixteen sources. Use a scrollable list; do not cram a 128-cell matrix onto a phone.
+Damage operations:
 
-Provide two distinct operations:
+- **Record combat damage**: choose a source and amount, with "Also subtract this much life" on by default. The damage and life change are one atomic, undoable event.
+- **Correct recorded totals**: edits damage history only and never changes life.
 
-- **Record combat damage:** select source and amount; show an explicit “Also subtract this much life” option, initially enabled. Confirming applies the damage and optional life change as one atomic, undoable event.
-- **Correct recorded total:** edit damage history only; do not unexpectedly add or subtract life.
-
-Poison stays independently editable. Infect can change the normal life consequence of damage, and toxic can add poison alongside it; the tracker must not infer these effects from a card name or damage amount. Users can disable the life adjustment and set poison themselves. [Wizards: damage rules, 120.3](https://magic.wizards.com/en/rules).
+The board's **Damage** shortcut remembers the last source chosen for each seat on that device. With eight players and partners, one recipient can have fourteen opposing sources, so sources are grouped by owner in a scrollable list.
 
 ### Commander tax
 
-Store command-zone casts per individual commander and derive the additional tax for the next cast as `2 × previous command-zone casts`. Label it **Next cast: +N additional mana**. Provide Record cast and a correction action. A cast from another zone does not increment this tracker. Do not imply the tax is the commander's entire casting cost. [Wizards: Commander, Command Zone](https://magic.wizards.com/en/formats/commander).
+Command-zone casts are stored per commander. The additional cost of the next cast is `2 × previous casts`, shown as **Next cast: +N additional mana**. **Tax** shortcuts record a cast; **Correct casts** sets the count. Casts from other zones are not tracked.
 
-### Optional trackers included in the release
+### Group life change (one device)
 
-Provide an extensible registry of simple manual counters: energy, experience, rad, and named custom counters. Optional Monarch and Initiative markers can be assigned/transferred manually; each marker has zero or one holder, independently. Default these extras off so a fresh board stays clean. Display a small “Manual tracker” description where users might otherwise expect automatic rules resolution.
+**Utilities → Group life change**: choose the caster; every other active player is selected initially and can be deselected. Enter the life each opponent loses and, optionally, the total life the caster gains. Gain is never guessed or multiplied. Review each before/after total, then apply. The whole effect is one command and one Undo. It is unavailable in shared rooms, where each player records their own life.
 
-Enable simple turn highlighting/turn number and a game elapsed timer in Utilities. A game timer derives elapsed duration from stored timestamps and pause offsets, not accumulated animation ticks. Shared timers use server timestamps and an estimated client-to-server clock offset refreshed on reconnect, so phones with different clocks agree. Do not reset counters automatically when advancing turns unless the user explicitly configured that behavior. Detailed phases, mana pools, storm automation, day/night automation, dungeon maps, Planechase, and team formats belong in later releases; named counters cover occasional needs now.
+### Turns, timer and legacy trackers
 
-### Undo, history, and rematches
+Turn tracking is off by default. When enabled (host-controlled in rooms) it shows **Next turn** beside Undo and a current-player choice in Utilities. Confirming a first-player result sets the turn only when tracking is on. The game timer derives elapsed time from start/pause timestamps; room clients estimate the server clock offset so phones with different clocks agree.
 
-Use human-readable history such as “Alex lost 3 life” or “Sam took 5 combat damage from Mira's commander; life −5.” Include actor identity in shared games. Keep a bounded visible history, initially 200 gameplay entries, and separate recent dice results.
+Named manual counters (energy, experience and so on) and the Monarch/Initiative markers still exist in the schema so older games stay readable. They are displayed when present, but the Extra trackers UI was removed and new games do not enable them.
 
-Local mode supports at least 50 undoable recent game actions and redo until a new action branches history. Combined commander/life changes undo together. Group adjacent increments from one uninterrupted hold into one undo group without delaying durable saves.
+### Undo, history, ending and rematches
 
-Shared mode uses a conservative undo: reverse only the most recent undoable gameplay action/group if it still matches the server's expected state. A player can reverse their own eligible last action; the host can reverse the latest action regardless of actor. If intervening changes make it unsafe, disable undo with an explanation and allow a normal correction. Never send an old full snapshot to “undo” another player's newer changes. Shared redo can wait for a later release.
-
-Rematch confirmation resets gameplay values, markers, dice history, and timers while retaining seat names, colors, commander labels, enabled trackers, assignments, and local rotations. A new game ID invalidates commands still in flight from the old match. Preserve a final snapshot before replacement. Changing player count during an active game should route through a confirmed new-game setup in this release; names/colors may change without resetting.
+- History keeps the latest 200 human-readable entries with actor names. Dice have their own bounded list.
+- One device: up to 60 undo groups, with **Redo** in Game history until a new action branches.
+- Shared rooms: conservative undo of the actor's own latest eligible action, checked against the room revision and current ownership. Administrative changes are a barrier. There is no shared redo.
+- **End game** offers **Rematch**, **End game** and **Cancel**. Ending returns everyone Home and keeps the game under **Recently ended** for 24 hours. **Reopen** restores totals, damage, commanders and history with the timer paused; in rooms only the host can reopen. **View final game** inspects it, and dice still work there.
+- **Rematch** keeps names, colors, commanders, artwork and seat assignments, restores the configured starting life, and clears counters, damage, casts, markers, elimination, turns, timer, dice, history and undo. It creates a new game ID; the room revision never rewinds.
+- **New game** starts fresh defaults; previous players and house rules are not copied.
+- **Share game recap** draws a PNG on the device: player colors, names, commanders, life and duration, marked **In progress** during play. A final recap can name a winner or a draw for the image only. **Share image** where supported, otherwise **Download PNG**.
 
 ## 5. Dice and utilities
 
-The utilities sheet contains animated dice, coin flip, first-player selection, turn/timer controls, optional trackers, history, export/import, and display settings. Avoid a permanently expanded dashboard of minor features.
+- d4, d6, d8, d10, d12, d20 and d100 (percentile, shown as paired d10s; 1–100), 1–20 dice per roll, and a coin.
+- **Roll for** a player gives resin dice in that player's seat color. **The table** gives warm ivory dice. Local rolls default to the last player saved or selected; shared guests default to their own seat.
+- **Who goes first?** offers **d20 for everyone**, where each eligible player gets a matching colored d20 and tied leaders reroll before the winner is revealed, or **Just choose a player**. Choosing a first player never reorders seats.
+- Every approved room member can roll. Results work on ended games too.
 
-Dice: d4, d6, d8, d10, d12, d20, d100; 1–20 dice per roll; individual results and total; Roll again; Skip animation; recent results. Treat d100 as 1–100 and make that visible. Coin flip presents readable Heads/Tails.
+**The result is chosen once and recorded before any animation.** Local mode uses `crypto.getRandomValues()` with rejection sampling. In rooms the server chooses and persists the roll and broadcasts the same result to everyone. Skipping, dismissing, refreshing or replaying never rolls again. Each game keeps its 30 most recent rolls; Utilities lists the latest eight for replay.
 
-First player: select uniformly among eligible seats, then run a short traveling highlight that settles on the selected player. Offer manual override and an explicit confirmation to set the turn highlight. Also provide “Roll a d20 for each player” with rerolls among tied highest results if the group prefers that ritual. Selecting first player never reorders seats automatically.
+The presentation is a full-screen Canvas2D overlay above the board, with no 3D library or downloaded assets:
 
-Choose the result once, record it, and then animate its reveal. Skipping, resizing, refreshing, or replaying animation must not reroll. In local mode use `crypto.getRandomValues()` with rejection sampling for unbiased integer selection. In a room the server generates and persists the result and broadcasts the same roll ID/results to everyone. Clients may animate at slightly different times, but every final face and number must agree. This is a friendly tabletop tool, not a provably fair gambling protocol. [MDN: getRandomValues](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues).
+- Each die is a seeded rigid-body throw (240 Hz simulation, recorded at 120 Hz) with gravity, corner impacts, friction and rolling resistance. It tumbles in from the players' side and settles on a face by itself in about 2.3 seconds. The face that lands on top carries the recorded value, and the die finishes square and upright in its own cell.
+- Solids have rounded fillets, soft lighting, resin grain and recessed ink numbers. The coin has a metallic face and a milled rim.
+- Detail and pixel ratio drop for crowded throws or slow devices without changing results or motion.
+- Reduced motion shows the landed pose directly. Tie rounds animate in order, and winner text appears only after the last round. Browser Back dismisses the result.
+- Synthesized sound knocks once per strike, louder for harder hits.
 
-## 6. Visual direction and interaction quality
+## 6. Optional commander cards (Scryfall)
 
-The design should feel like a carefully art-directed fantasy game companion. Aim for the quality of a premium shipped product: coherent materials, typography, motion, and sound, with very little friction during play.
+Commander names always work as plain text. Card data adds to them without being required:
+
+- **Artwork**: setup, joining and **Edit player & commanders** suggest card names as you type, or accept a pasted Scryfall card link (**Find artwork**). The game saves validated public metadata (`id`, front-face `name`, `imageUrl`, `scryfallUrl`, `artist`). Artwork follows approved guests, saved games, exports and rematches. Partners share the panel. Renaming a commander by hand clears the old card. Player details credit the artist and link to the card.
+- **View commander**: the full card with rules text, mana cost, type and stats. Players can switch partners and double-faced card faces. **Rulings & notes** loads dated rulings with attribution. Reading another player's card never grants permission to edit their seat.
+- **Server boundary**: `/api/cards/suggest`, `/resolve`, `/details` and `/rulings` need no session. They map input onto fixed Scryfall API paths, never fetch arbitrary URLs, share one bounded cache and one serialized upstream queue (550 ms spacing), back off for at least 30 seconds on upstream rate limits, and share a budget of 100 requests a minute per client.
+- **Caching**: card text and rulings stay in the tab's memory for up to an hour. The service worker keeps up to 64 viewed art crops for 30 days. A missing image falls back to the normal panel, and lookups never block counters.
+
+## 7. Visual direction and interaction quality
+
+The app should feel like a carefully art-directed fantasy game companion with the polish of a shipped product: coherent materials, typography, motion and sound, and very little friction during play. The game board is the product. Avoid marketing-page structure, dense navigation, excessive blur and walls of equally prominent buttons.
 
 ### Design system
 
-- Background: near-black ink (`#090D14`) with a restrained arcane texture/radial glow.
-- Panels: layered blue-black (`#141B28`) surfaces, a fine illuminated edge, subtle inner shading, and deliberate space between seats.
-- Primary text: warm off-white (`#F3F0E8`); supporting text starts around `#B6C0CE`. Verify contrast on actual backgrounds.
-- Accent: restrained antique gold (`#D6B66A`) for global actions. Player palettes include ivory, blue, violet/charcoal, ember, green, teal, rose, and copper. Always add names/icons; color alone must not identify a player.
-- Typography: a legible interface face such as locally bundled Inter, an optional restrained fantasy serif for titles, and large tabular numerals for life. Use licensed local fonts and record their licenses.
-- Life numbers should dominate: approximately 64–112 px on comfortable layouts and 40–56 px in dense eight-seat layouts. Scale down only as needed; support large values without clipping.
-- Use original SVG sigils and CSS effects. Keep backgrounds subordinate to numbers. Use owned or appropriately licensed art if added; document asset provenance so the project can be shared publicly.
-- Avoid generic marketing-page structure, dense navigation, excessive glass blur, and a mass of equally prominent buttons. The game board is the product.
+- **Brand**: an original five-mana crest (sun, water, skull, flame and tree around a crowned commander card) in `src/client/brand/emblem.ts`. The same paths drive the header, player ornaments, recap canvas, favicon and install icons.
+- **Type**: locally bundled Inter for the interface and Cormorant Garamond for titles (four WOFF2 faces), with large tabular numerals for life.
+- **Player palettes**: ivory, blue, violet, ember, green, teal, rose and copper. Names and sigils always accompany color.
+- **Appearance** is per browser:
+  - **Light**, **Dark** or **Use device setting** (the default).
+  - Four coordinated looks: **Gilded night**, **Celestial spell**, **Verdant haven** and **Dragon's hearth**.
+  - Color themes: Classic, Arcane, Forest, Ocean, Ember and Monochrome.
+  - Accents: Gold (default), Red, Violet, Green, Blue, Rose, Teal and Copper.
+  - Table finishes: Astral silk (default), Dragonfire, Celestial atlas, Verdant sanctuary, Stormglass, Prismatic veil, Gilded marble and Onyx minimal.
+  - Finishes use self-hosted SVGs in `public/table-finishes/` (with portrait variants) and are precached. `public/appearance.js` applies saved choices before hydration from validated `localStorage` mirrors. **Reset appearance** restores the defaults. None of this changes game data or other players' displays.
+- Life numbers dominate. Dense layouts scale down only as far as needed and may scroll rather than clip values or shrink controls.
 
 ### Layout
 
-| Seats | Portrait columns × rows | Landscape columns × rows |
-| --- | --- | --- |
-| 1 | 1 × 1 | 1 × 1 |
-| 2 | 1 × 2 | 2 × 1 |
-| 3–4 | 2 × 2 | 2 × 2 |
-| 5–6 | 2 × 3 | 3 × 2 |
-| 7–8 | 2 × 4 | 4 × 2 |
+- **All facing me** (`upright`) and **Shared table** (`shared`: the far row is rotated 180° and the +/− areas are larger). Landscape uses two rows, spreading odd seat counts evenly.
+- **Follow device rotation** is on by default on phones and tablets: Shared table in landscape, All facing me in portrait. Choosing a layout or flipping a seat turns it off on that device. Desktop stays manual.
+- Layout and rotation are local presentation only. They never change game state, room permissions or another phone's view, and **My seat** stays upright.
+- Use dynamic viewport height and safe-area insets. Touch targets are at least 44 × 44 CSS pixels; eight seats on a small phone scroll instead of shrinking controls, and seats below the fold are never hidden.
 
-For odd seat counts, use the vacant position as a quiet utility space or a balanced layout; preserve predictable touch zones. Prefer grids over narrow radial wedges. Offer a 180° facing flip for individual tabletop tiles. Sideways 90° tiles can wait until their interaction and sizing are proven.
+### Motion, sound and device features
 
-Use dynamic viewport height and safe-area insets. Keep tap targets at least 44 × 44 CSS pixels, preferably 48 for frequent actions. At eight seats on a very small phone, use a deliberate scrollable layout if needed instead of shrinking controls below usable size. Never hide that more seats are below the viewport. Test portrait, landscape, browser chrome changes, on-screen keyboards, and zoom. My seat view stays upright and larger.
+- **Effects**: Full, Reduced or Off. The system reduced-motion setting always wins.
+- State changes never wait for animation, and effects never capture input or hide labels. No canvas render loop runs on the board; the dice canvas exists only while a roll is shown.
+- Sound is opt-in, synthesized locally, starts only after a user gesture, and can be previewed. Haptics, wake lock and fullscreen are optional and feature-detected. Wake lock shows an indicator while active.
+- Game results are fully readable without sound, motion or haptics.
 
-### Motion and effects
+### Accessibility and mobile requirements
 
-- Tap feedback: approximately 80–140 ms, with a crisp press state and small number transition.
-- Life loss/gain: brief ember/energy accents near the affected value; never a full-screen flash.
-- Drawers: approximately 180–260 ms with controlled easing and stable focus.
-- Dice: a satisfying 600–1,200 ms tumble, bounce, shadow, then a clear final result. Use CSS/SVG and Motion initially. A lazy-loaded 3D renderer is optional only after core functionality and performance are good.
-- First-player selection: approximately 900–1,600 ms, skippable.
-- Ambient effects: sparse, slow, disabled in low-effects mode and when hidden. No permanent high-cost canvas render loop on the board.
+These remain standing requirements for every change:
 
-State changes must never wait for animation completion. Effects cannot capture pointer input or obscure control labels. Honor `prefers-reduced-motion` and expose Full/Reduced/Off effects settings. Audio is opt-in, starts only after user interaction, and has a mute control. Haptics are optional and feature-detected. Game results remain fully readable without sound, motion, or haptics.
+- Real buttons, visible focus, keyboard access, Radix dialog semantics with focus restoration, labels such as "Decrease Alex's life", readable contrast in both light and dark, and preserved page zoom.
+- Design every screen at phone size first. Frequent actions sit within thumb reach. Form text is at least 16 px. Room-code entry accepts paste. Sheet confirmations stay above the on-screen keyboard. No hover-only or right-click-only actions.
+- Work in ordinary Safari/Chrome tabs with visible browser bars. Use `viewport-fit=cover` and `env(safe-area-inset-*)`, never rely only on `100vh`, and never require orientation lock or fullscreen.
+- Sheet scrolling must not adjust life behind it. Browser Back closes an open sheet or dice result before leaving a game.
+- After locking the phone, switching apps or opening the camera, reconcile before accepting input. A suspended socket may never fire a clean close.
+- Joining never requires installing an app or granting camera permission. Copy link and JSON download/import work through ordinary browser controls.
+- Be gentle on battery: pause decorative motion when hidden, keep updates scoped to affected panels, and avoid large animated blur layers.
 
-### Accessibility and browser support
+## 8. Implementation architecture
 
-Use real buttons, visible focus, keyboard access, accessible dialog semantics, focus restoration, labeled controls such as “Decrease Alex's life,” and readable contrast. Batch live-region announcements during held adjustments. Preserve page zoom. Apply gesture suppression only to relevant repeated-tap controls, not the entire app.
+### Stack
 
-Target current and previous major releases of Safari/iOS, Chrome/Android, Firefox, and Chromium desktop browsers. Feature-detect fullscreen, wake lock, vibration, and installation prompts. Explain unavailable enhancements without blocking play. Wake lock should be opt-in, visibly active, and reacquired after returning to the foreground when appropriate. [MDN: Screen Wake Lock](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Wake_Lock_API).
-
-### Mobile release requirements
-
-- Design every screen at phone size first, including setup, join/approval, commander lists, import/export, errors, and settings. No essential hover states, right-click actions, tiny icon menus, or desktop-only forms.
-- Put frequent actions within comfortable thumb reach; use bottom sheets and concise menus. Drag/swipe/long-press shortcuts always need visible tap alternatives. Room-code entry supports paste; numerical fields use an appropriate mobile keyboard while still allowing negative life corrections. Use at least 16 px form text and keep sheet confirmations reachable above the keyboard.
-- Support ordinary Safari/Chrome tabs with their address bars visible. Use `viewport-fit=cover`, `env(safe-area-inset-*)`, and dynamic-height layouts with fallbacks so the notch, home indicator, browser bars, and on-screen keyboard cannot cover controls. Avoid relying solely on `100vh`. [MDN: CSS env() and safe areas](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/env).
-- Portrait must be excellent. Landscape is optional for the player and must remain usable; never require successful orientation lock or fullscreen to play. Prevent a sheet's scroll gestures from adjusting life in the board behind it. Back closes an open sheet before unexpectedly leaving a game where browser navigation integration supports this.
-- Reconcile state after locking/unlocking the phone, switching apps, opening the camera to scan a QR code, and returning from background suspension. A phone can suspend sockets/timers without firing a clean close event; resume must verify the connection and authoritative room state before accepting input. Test interrupted pointer gestures as part of this lifecycle.
-- Provide a useful Add to Home Screen help path on iPhone. Use a native install prompt only where supported; do not depend on `beforeinstallprompt` on iOS. Test browser and installed modes separately, and do not promise that all browsers/installation contexts share saved state. [MDN: PWA installation](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable).
-- Copy link and JSON download/import must work through ordinary browser controls; native sharing/file-sharing APIs are optional enhancements with fallbacks. Joining never requires installing another app or granting camera permission inside this application.
-- Optimize for battery and modest phones: pause decorative motion when hidden, cap particles, avoid large continuously animated blur layers, and keep game-state updates scoped to affected panels. Check a prolonged session for memory growth, warmth, and excessive battery use instead of judging only a brief desktop demo.
-
-Automate mobile Chromium and WebKit viewport coverage, then physically test at least one iPhone in Safari and one representative Android phone in Chrome. Add Samsung Internet and iPhone Chrome smoke checks when available. Desktop WebKit emulation is useful but does not prove actual iOS keyboard, installation, suspension, or touch behavior. If physical devices are unavailable during implementation, record those specific checks as unverified and give the user a short executable device checklist; do not claim full device validation.
-
-## 7. Recommended implementation architecture
-
-Use a small TypeScript codebase with a shared game domain and two persistence/transport adapters. Recommended choices are decisions to keep the implementation focused, not a requirement to chase every new dependency version.
-
-| Layer | Recommendation |
+| Layer | As built |
 | --- | --- |
-| Frontend | React + TypeScript + Vite |
-| Styling | CSS design tokens and CSS Modules; accessible headless dialog primitives where useful |
-| Animation | CSS transitions and Motion for React |
-| UI state | Zustand with narrow selectors; pure domain functions outside components |
-| Validation | Zod schemas shared by client/server for commands and saved data |
-| Local persistence | IndexedDB through the small `idb` wrapper |
-| Server | Node.js supported LTS, initially Node 24; Fastify |
-| Live transport | `@fastify/websocket`, with HTTP for session/create/join/snapshot operations |
-| Shared persistence | SQLite through `better-sqlite3`, WAL mode, explicit migrations |
-| Production assets | Served by the same Fastify process using `@fastify/static` |
-| PWA | `vite-plugin-pwa` with user-prompted updates |
-| Tests | Vitest, React Testing Library, Playwright |
-| Package management | npm with a committed lockfile and pinned Node version |
+| Frontend | React 19, TypeScript 6, Vite 8 |
+| Styling | Plain CSS files in `src/client/styles/` with custom-property tokens; Radix Dialog for sheets |
+| Animation | CSS transitions; Canvas2D dice renderer and physics written for this project |
+| UI state | Zustand 5 with narrow selectors |
+| Validation | Zod 4 schemas shared by client and server |
+| Local persistence | IndexedDB through `idb` |
+| Server | Node 24 (Docker base image `node:24-bookworm-slim`, pinned by digest), Fastify 5 with cookie, rate-limit, static and websocket plugins |
+| Shared persistence | SQLite through `better-sqlite3`: WAL, foreign keys, FULL sync, transactional migrations (schema 3) |
+| PWA | `vite-plugin-pwa` with prompted updates |
+| Other | `qrcode` (generated locally), `@fontsource` fonts |
+| Tests | Vitest (with `fake-indexeddb`), Playwright with Chromium and WebKit phone projects, `@axe-core/playwright` |
+| Packages | npm with a committed lockfile; `.nvmrc` pins Node 24, `engines` allows ≥ 22.12 |
 
-Verify compatible stable package versions when implementing; record actual versions in the lockfile. Check native SQLite bindings on both target container architectures. [Vite guide](https://vite.dev/guide/), [Motion for React](https://motion.dev/docs/react), [Fastify docs](https://fastify.dev/docs/latest/), [Fastify WebSocket plugin](https://github.com/fastify/fastify-websocket), [better-sqlite3](https://github.com/WiseLibs/better-sqlite3).
+Exact versions live in `package-lock.json`. Do not add accounts, a cloud database, Redis, Kubernetes, a card database or a rules engine. One server process with one SQLite database on local storage is the supported deployment.
 
-Do not add accounts, a cloud database service, Redis, Kubernetes, a card database, or a full MTG rules engine to satisfy the first release. One server process and one database on a local persistent volume are sufficient. This SQLite deployment is single-instance; horizontally scaled servers would need a later architecture change.
-
-Suggested layout:
+### Repository layout
 
 ```text
 src/
+  shared/              # used by client and server; no React, DOM, storage or network
+    schema.ts          #   Zod contracts: game, setup, commands, admin commands, envelopes, room views
+    game.ts            #   pure reducer, setup defaults, rolls, warnings, timer, recovery window
+    cards.ts           #   commander card metadata schema
+    permissions.ts     #   room undo eligibility
+    random.ts          #   UUIDs with getRandomValues fallback, rejection-sampled integers
   client/
-    app/                 # launch, mode selection, hydration, navigation
-    components/          # shared accessible controls and surfaces
-    features/
-      board/
-      players/
-      commander/
-      utilities/
-      rooms/
-      history/
-      settings/
-    adapters/            # local-game and shared-room controllers
-    storage/             # IndexedDB repositories and migrations
-    styles/              # tokens, layout, motion, accessibility
-  shared/
-    domain/              # types, pure reducer, invariants, history
-    schemas/             # validation and protocol definitions
+    main.tsx
+    app/               # App.tsx (screens, sheets, toolbar), store.ts (Zustand store and local controller)
+    adapters/room.ts   # room controller: session renewal, durable outbox, sockets, reconnect, clock offset
+    storage/           # repository.ts (IndexedDB, profile, archives, import/export), tabIdentity.ts
+    features/          # Board, Setup, PlayerDetails, CommanderQuick, Utilities, GroupLife, GameMenu,
+                       # RecentGames, Rooms, Settings, AppearanceOptions, TableLayout, GameRecap,
+                       # GameMoments, BrowserEnhancements and their helpers
+    components/        # ui.tsx (Sheet, Field, Toggle, Icon), HoldButton, CommanderInput/Reader/Artwork,
+                       # PlayerNameInput, FeatureBoundary, feedback.ts (sound and haptics)
+    dice/              # DiceRoll, DiceCanvas, geometry, rounded, ivory, motion, presentation, preference
+    brand/emblem.ts
+    styles/            # app, theme, appearance, table-finishes, dice, fonts, home and feature styles
   server/
-    http/                # guest sessions, rooms, assets, health
-    realtime/            # sockets, subscriptions, presence
-    services/            # authorization and transaction orchestration
-    database/            # repositories and SQLite migrations
-tests/                   # domain, integration, browser tests
-public/                  # local icons, fonts, manifest assets
-docs/                    # architecture, deployment, testing, assets
-Dockerfile
-compose.yaml
-compose.local.yaml
-.env.example
-.dockerignore
-.github/workflows/
-README.md
-BUILD_PLAN.md
+    index.ts           # startup and graceful shutdown
+    app.ts             # HTTP/WebSocket routes, origin/CSRF checks, headers, rate limits, static assets
+    service.ts         # room service: authentication, authorization, commands, receipts, retention, broadcasts
+    database.ts        # SQLite setup and migrations
+    config.ts          # environment validation
+    cards.ts           # Scryfall proxy, queue and cache
+    traffic.ts         # shared per-session/per-room command budgets
+    operations.ts      # private diagnostics and scheduled verified backups
+public/                # appearance.js, icons, table-finishes/ (and portrait/), font licenses
+scripts/               # dev, backup, diagnostics, container/proxy/PWA/LAN smoke tests,
+                       # measure-performance, check-release, generate-emblem
+tests/                 # Vitest suites (*.test.ts), e2e/ Playwright specs, deployment/ ARM64 smoke image
+docs/                  # architecture, deployment, testing, progress, assets, releases/, screenshots/
+.github/               # workflows (ci, release, refresh-latest, migrate-image), release notes, issue template
+Dockerfile, compose.yaml, compose.local.yaml, .env.example, .env.docker.example, .dockerignore
 ```
 
-The game reducer must not depend on React, the DOM, storage, sockets, or time/randomness globals. Supply IDs, timestamps, and random outcomes from the controller. Both modes use the same rules and command types. View components call the active adapter; they do not write persistence directly.
+Architectural rules:
+
+- The reducer (`reduceGame`) receives IDs, timestamps and random results from its caller and never reads globals, storage, sockets or the DOM. Both modes use the same commands and rules.
+- View components call store actions. Only the local controller and room adapter write persistence or talk to the server.
+- Optional sheets, card tools, room/QR tools, dice and game moments load as separate chunks behind `FeatureBoundary`, which offers a recoverable error if a download fails. The service worker precaches every chunk.
+- The board subscribes to visible seat data so unrelated changes do not rerender every tile.
 
 ### Data contracts
 
-Define stable IDs for players, commanders, games, rooms, members, events, and operations. Reordering a visual seat never changes an ID. Keep presentation preferences apart from shared game state.
+`src/shared/schema.ts` is the source of truth. In summary:
 
-At minimum model:
+- **Game** (schema version 1): ID, revision, settings, ordered player IDs (1–8), players, commanders (one or two per seat, at most 16), `damageReceived`, markers, turn, timer timestamps, `status` (`active`/`ended`), nullable `endedAt`, up to 30 rolls, 200 history entries, and 60 undo and 60 redo frames of reversible field changes.
+- **Player**: ID, name (≤ 40 characters), palette color, life, poison, legacy named counters, eliminated flag. **Commander**: ID, owner, label (≤ 100), casts, optional card.
+- **Commands** form a strict discriminated union (`adjust`, `set`, `groupLife`, `damage`, `damageSet`, `cast`, `castSet`, `editPlayer`, `eliminate`, `turn`, `turnTracking`, `timer`, `end`, `reopen`, `rematch`, `undo`, `redo`, `roll` and others). Room administration uses a separate union (`requestSeat`, `approve`, `reject`, `release`, `remove`, `transfer`, `lock`, `rotateCode`, and the retired `policy`).
+- **Envelope**: `protocolVersion`, `roomId`, `gameId`, `operationId` (stable through retries), `baseRevision` (room revision), optional `groupId`, and `command`. Actor and role always come from the session.
+- **Local profile**: installation ID, appearance, effects, audio, haptics, wake lock, seat rotations, artwork framing, table layout and auto-rotation, last mode/room, display name, Table/My seat view and local seat. Presentation preferences never enter shared game state.
 
-- `GameState`: schema version, game ID, revision, preset/settings, ordered player IDs, players, commanders, damage received, global markers, optional turn state, timer timestamps, lifecycle status.
-- `Player`: ID, display name, palette, life, poison, named counters, eliminated flag.
-- `Commander`: ID, owner player ID, label, command-zone cast count. Control changes do not replace its ID.
-- `HistoryEntry`: event ID, actor, operation ID, command summary, reversible field changes/group ID where applicable, timestamp and committed revision.
-- `LocalProfile`: installation ID, device preferences, last active mode/game/room, local seat rotations, schema version.
-- `Room`: ID, invitation code, monotonic room revision, current game ID, host member ID, permissions policy, join lock, created/updated/expiry times, protocol version. Keep the code retrievable for the host's share screen, exclude it from general snapshots/logs, and index it uniquely; only guest session bearer credentials must be stored as hashes.
-- `GuestSession` and `RoomMember`: hashed credential/expiry, role, guest-to-seat mapping, revoked state. Presence is transient and separate from membership.
-- `Roll`: unique ID, requester, dice specification or candidate IDs, persisted results, timestamp. Never persist animation frames.
+Imports are limited to 2 MB and checked for schema version, structure, integer bounds and references before replacing anything. Exports omit the profile, installation ID, room credentials and cookies.
 
-Use maps keyed by IDs for commander damage, with absent entries interpreted as zero. Impose bounded names, histories, dice counts, and payload sizes. Render player input as text. Imports need a schema version, size limit, structural validation, referential checks, and finite integer checks before any replacement.
+**Compatibility identifiers that must not change.** These protect existing saves, rooms and installations:
 
-## 8. Persistence and synchronization contracts
+- IndexedDB database `mtg-util` (version 1) and export format `mtg-util-game` (version 1).
+- SQLite file `mtg-util.sqlite` and protocol version 1 with its `x-mtg-client` header.
+- Compose project `mtg-util`, service `mtg-util` and volume `mtg-util-data`.
+- `localStorage` keys `command-table-appearance` and `command-table-style`.
+- Historical appearance IDs: `theme` displays Gold, `gold` displays Red, `glow` is Astral silk, `tabletop` is Dragonfire and `obsidian` is Stormglass.
 
-### Local game saves
+The GitHub repository stays `Addison16/commanders-table`. `ghcr.io/addison16/commandtable` is the primary image, with `commanders-table` kept as a compatibility image name.
 
-Use IndexedDB as the authoritative local store. Save each accepted mutation immediately in a transaction containing game state/revision and relevant history. Serialize writes; do not wait for `beforeunload` and do not defer essential saves until a debounce expires. The interface can show an optimistic preview, but must distinguish pending changes from confirmed saves. Resolve interrupted saves on reload from the last committed transaction. [MDN: Using IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB).
+## 9. Persistence and synchronization contracts
 
-Use a transaction-level revision comparison so a stale tab cannot overwrite a newer game. Use BroadcastChannel, where supported, to notify other tabs. A second local editing tab should become read-only or request takeover; the revision check remains the correctness mechanism when messaging is unavailable. On conflict, reload committed state and explain the rejected action rather than silently discarding someone else's changes.
+[docs/architecture.md](docs/architecture.md) holds the full detail. The essential contracts are:
 
-Handle unavailable storage, quota errors, corrupt records, and unknown future schema versions. Keep a previous valid checkpoint and provide recovery/export controls. Never overwrite unreadable data with defaults automatically. If only memory storage is available, gameplay may continue with a visible “Changes aren't being saved” notice and export. Request persistent browser storage opportunistically when supported; denial is not a failure to play.
+### Local games
 
-Export a versioned JSON game/backup without guest credentials. Imports preserve the receiving browser's installation ID and validate before a confirmed replacement. In shared mode, export a committed game snapshot; importing creates a new local game or a new host-owned room, never overwrites a live room implicitly. An export is data portability, not a way to inherit host authority.
-
-### Shared-room operations
-
-The server is authoritative. Clients submit commands, not complete replacement state. Use one room subscription per socket and a versioned protocol. A representative command envelope contains:
-
-```ts
-type CommandEnvelope = {
-  protocolVersion: number;
-  roomId: string;
-  gameId: string;
-  operationId: string;       // unique and stable through retries
-  baseRevision: number;      // roomRevision in shared mode
-  command: GameCommand;      // validated discriminated union
-};
-```
-
-The authenticated actor comes from the server session; ignore any client-supplied actor/role. Authenticate and validate the envelope first, then look up an existing receipt for the same actor/operation before testing mutable game IDs or host roles. An identical already-committed operation returns its original acknowledgement, even if that operation changed the match or transferred host. A receipt lookup must not reveal new private room data to a now-revoked member. Only unseen operations proceed through current membership, authorization, and game/precondition checks.
-
-Apply each unseen accepted operation inside one SQLite transaction. Persist the new snapshot, ordered event, and idempotency result together. Acknowledge only after commit, then broadcast the new revision and compact snapshot. Eight-player state is small enough that full current-state broadcasts are preferable to a complicated patch protocol; send history separately or as the newest entry. Authentication revocation and command execution must not race to allow a revoked actor to commit another action.
-
-Define `roomRevision` as a monotonic integer advanced by every shared gameplay or administrative commit, including approval, host transfer, settings, and rematch. It never resets within a room. Broadcast it alongside `gameId` and the game snapshot; use it to order messages and guard structural edits. A new match changes `gameId` without rewinding `roomRevision`. Local games retain their own transaction revision. Do not compare revisions from different rooms or substitute a reset per-game revision for the room revision.
-
-Relative adjustments such as “life −1” apply to current authoritative state in server order even if unrelated edits advanced the revision. Absolute edits, undo, reset, seat reassignment, and other structural operations require the appropriate current revision or field precondition; reject stale operations with a fresh snapshot and a clear correction path. No last-writer-wins replacement of the whole board.
-
-Keep a unique idempotency record for each `(roomId, actorId, operationId)` for the lifetime of the room, including the original game ID and payload hash. Repeated operations return their original outcome without applying again; reject reuse of an ID with different content. Deduplication must survive rematches/server restart and outlive the displayed history limit. Returning an old acknowledgement must not replace a newer client snapshot. Ignore older received revisions on clients; on a detected gap or reconnect fetch a fresh snapshot.
-
-For responsive controls, render pending local deltas on top of confirmed state. Rebase still-pending operations when a new authoritative revision arrives and remove acknowledged IDs. Persist the very small set of submitted but unacknowledged operation envelopes before sending, so a refresh after a lost acknowledgement can query/retry the same IDs. Do not invent a new ID for a retry.
-
-On disconnect, cancel held input and disable new shared mutations. Show “Reconnecting — changes paused” and the last confirmed state. Unsent actions are not silently queued for later. On reconnect, reauthenticate, resolve already-submitted operation IDs, fetch the current game, and reconcile before enabling controls. If the match changed, reject old commands. Unknown submitted operations can be retried with their original IDs only when still valid; stale absolute changes require user correction. If membership/session is lost, show explicit rejoin guidance and retain a readable record of unresolved actions until accounted for.
-
-Provide an explicit **Continue a copy on this device** action during an outage. It forks the last confirmed snapshot into a new local game, clearly labels it independent, and never automatically merges it back. Switching modes otherwise creates/selects a game; it does not erase the other mode's saved game. Promoting a local game to a room may create a server copy from its committed snapshot, leaving the local original archived.
-
-### Room lifetime and server boundaries
-
-Retain inactive rooms for a configurable period, initially 30 days since the last committed game/admin activity. Display expiry information in the room menu. Socket heartbeats alone do not extend retention indefinitely. Clean expired rooms, sessions, and operation records deliberately; test the expiry path. No global searchable room directory is needed.
-
-Check allowed Origin values for state-changing HTTP requests and WebSocket upgrades; use same-origin deployment and explicit CSRF protection for cookie-authenticated mutations. Validate every socket message after connection. Rate-limit session creation, room creation/join attempts, and commands; allow normal held-button and multi-touch use. Bound message size and pending socket buffers. Use heartbeat/reconnect backoff with jitter and detect sleeping/backgrounded clients. [Fastify WebSocket docs](https://github.com/fastify/fastify-websocket), [MDN: WebSocket](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket).
-
-Separate internal room IDs from public invitation codes. Codes invite participants; they are not host credentials. Do not log cookies, invitation URLs, tokens, or entire player payloads. Configure the public origin and trusted reverse-proxy hops rather than blindly trusting arbitrary forwarding headers. Include protocol/schema version negotiation so an old cached client is asked to update before sending incompatible commands.
-
-## 9. Offline behavior and PWA updates
-
-Cache the app shell and required local assets for offline reopening after a successful initial load. One-device games remain usable offline. A cached shared-room screen cannot synchronize without a reachable server; use the explicit outage behavior above. Local-network rooms can work without public internet if all devices can still reach the host.
-
-Service workers and some enhancements require HTTPS, with a localhost development exception. An HTTP LAN address should still support core play and saving; installability, offline reopening, and wake lock are progressive enhancements. Feature-detect `crypto.randomUUID()` and fall back to UUID-formatted bytes from `crypto.getRandomValues()` so normal LAN HTTP does not crash on ID creation. [MDN: secure-context features](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts/features_restricted_to_secure_contexts), [MDN: getRandomValues](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues).
-
-Precache only application assets; exclude session, room, and mutation endpoints from service-worker caching. Bundle essential fonts/icons locally. Show “Update available” and let the user apply it after saving or finishing the game. Do not force a reload in the middle of play. Migrations must preserve valid games and refuse unsupported future versions safely. [Vite PWA: prompt for update](https://vite-pwa-org.netlify.app/guide/prompt-for-update).
-
-## 10. Local development, Docker, and distribution
-
-### Local development first
-
-Supply root scripts with documented behavior: `npm run dev`, `npm run build`, `npm start`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run test:e2e`. `dev` starts Vite and the API server; Vite proxies API and WebSocket routes so the browser uses one origin. Use a task-specific local data directory excluded from Git. Explain phone testing on the LAN and the difference between the computer's localhost and a URL another phone can reach.
-
-### Docker deliverables
-
-Provide a multi-stage Dockerfile: dependency/build stage, then a minimal production Node runtime running the compiled server and built frontend. Run as a non-root user, bind `0.0.0.0:8080`, and shut down cleanly on SIGTERM. Include only production dependencies/assets. Add a health endpoint that verifies database readiness without exposing room information.
-
-Persist SQLite and required sidecar files under `/data`; mount a named volume backed by local storage, not a network filesystem. Initialize that directory with correct non-root ownership. Use WAL, foreign keys, a sensible busy timeout, transactional migrations, and database-consistent backup/restore instructions. A live backup must use SQLite's backup mechanism or a controlled shutdown; do not tell users to copy only the active `.sqlite` file while ignoring WAL data. [SQLite: WAL constraints](https://sqlite.org/wal.html).
-
-Important distinction: local games live in browsers; shared games, guest sessions, memberships, and deduplication records live in the server volume. Recreating a container with the same volume and URL should preserve shared sessions and rooms. Deleting the volume removes server data; changing scheme/host/port changes the browser storage context.
-
-Deliver `compose.local.yaml` for building locally and `compose.yaml` for pulling the published image. Example target configuration, with placeholders resolved before publication:
-
-```yaml
-services:
-  mtg-util:
-    image: ghcr.io/OWNER/mtg-util:VERSION
-    ports:
-      - "8080:8080"
-    environment:
-      NODE_ENV: production
-      PORT: "8080"
-      DATA_DIR: /data
-      PUBLIC_ORIGIN: http://localhost:8080
-      ALLOW_INSECURE_HTTP: "true" # deliberate local/LAN example
-      ROOM_TTL_DAYS: "30"
-    volumes:
-      - mtg-util-data:/data
-    restart: unless-stopped
-volumes:
-  mtg-util-data:
-```
-
-Document setting `PUBLIC_ORIGIN` to the actual LAN address or HTTPS domain before sharing QR links. Public deployments should use HTTPS through a reverse proxy that forwards WebSocket upgrades and preserves long-lived connections. Derive `wss://` from the HTTPS origin. `ALLOW_INSECURE_HTTP` defaults to false; set it explicitly to true only for the documented HTTP local/LAN setup above. The HTTPS deployment example sets it to false and uses secure cookies. Fail clearly on contradictory configuration instead of shipping a LAN login loop caused by a Secure cookie on HTTP.
-
-Use immutable caching for hashed assets, revalidation for HTML and the service worker, and appropriate no-store headers for session/private API responses. Add `.dockerignore`, `.env.example`, a health check, and practical update/backup/restore commands. A static-only hosting service such as GitHub Pages cannot run the shared-room backend; GitHub can host the source and registry while Docker runs on a suitable server.
-
-### Publishing later
-
-Prepare GitHub Actions that lint, typecheck, test, and build on pull requests. Release builds should publish versioned images to GHCR, with version, commit, and stable/latest tags following a documented policy. Build `linux/amd64` and `linux/arm64`; native SQLite must actually start on both architectures, not merely produce manifests. Use limited workflow permissions and registry credentials through GitHub's supported mechanisms. [Docker: multi-platform GitHub Actions](https://docs.docker.com/build/ci/github-actions/multi-platform/).
-
-Prepare the publication workflow and README, but do not claim publication occurred or push code/images merely because this plan exists. The user's present request is planning, and the repository/registry destination has not been chosen. When publication is requested, finalize owner/image names, select the source license with the owner, publish, make the package public if intended, and verify an unauthenticated pull from a clean environment. Public source alone does not establish package visibility. [GitHub: Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
-
-README instructions must cover installing/running locally, starting from a pulled image, creating/joining a room, persistence and origin limitations, HTTPS/PWA behavior, updating, backing up, and restoring. Include screenshots of an actual built four-player board and eight-player board. Record font/art licenses in `docs/assets.md`; keep credentials, generated databases, and personal exports out of the repository.
-
-## 11. Implementation milestones and completion gates
-
-1. **Foundation and visual system.** Scaffold the repository/scripts, shared schemas/reducer, design tokens, navigation, and responsive board. Establish two-, four-, and eight-seat layouts using realistic data. Gate: local development works and touch/keyboard controls are readable at target sizes.
-2. **Complete one-device play.** Add setup, life, poison, per-commander damage/tax, optional counters, persistence/migrations, undo/history, and rematch. Gate: a real game can be played, refreshed, and resumed without losing committed data.
-3. **Complete shared rooms.** Add guest sessions, create/join/QR, approvals, room permissions, server storage, live commands, idempotency, reconnect, safe undo, host transfer, and expiry. Gate: independent browsers converge under simultaneous actions and reconnects; the one-device mode still works independently.
-4. **Utilities and presentation polish.** Complete animated dice/coin/first-player tools, timing controls, sound/effects settings, accessibility, and PWA caching/updates. Gate: visual inspection on mobile and desktop; reduced-motion behavior is complete and dice results remain stable.
-5. **Packaging and release readiness.** Add Docker/Compose, multi-architecture checks, documentation, CI, and release templates. Gate: container restart preserves rooms, LAN play works, HTTPS proxy behavior is tested, and a new developer can follow the README.
-
-These are implementation order, not optional scope cuts. Make each milestone functional before adding its next layer of polish. Record actual verification and any remaining device-specific limitations in `docs/testing.md`. Do not leave visible dead buttons or placeholder shared-room flows in a claimed complete release.
-
-## 12. Verification and acceptance checklist
-
-Write focused tests for invariants, persistence, authorization, and sync failures. Avoid tests that only repeat component internals. Use manual visual/touch review alongside automation.
-
-### Domain and persistence
-
-- [ ] Player counts 1–8 work; setup defaults and custom starting life are correct.
-- [ ] Rapid taps and independent simultaneous touches produce the exact expected total.
-- [ ] Holds stop after cancellation, modal opening, backgrounding, and disconnect.
-- [ ] Negative life is supported; negative nonnegative-counter values are rejected.
-- [ ] Partners at 11 damage each do not trigger the same result as one commander at 22.
-- [ ] Own/stolen commander damage, life gain, renaming, and seat reordering preserve source identity.
-- [ ] Record damage + life change is atomic; correcting damage changes only the chosen total.
-- [ ] Cast counts produce the correct next-cast additional tax independently per commander.
-- [ ] Undo/redo, rematch, markers, and eliminated players preserve the documented behavior.
-- [ ] Immediate refresh, backgrounding, and reopening restore the last committed game and history.
-- [ ] Two local tabs cannot silently overwrite one another.
-- [ ] Invalid imports, future schemas, quota/storage denial, and corrupted data have recovery paths.
-- [ ] Export/import works without copying installation identity or guest credentials.
+- IndexedDB is authoritative. It holds the profile, active game, previous checkpoint, ten archives, ten unfinished games, an ended-game standby snapshot, room previews and pending room envelopes.
+- Each change compares the committed game ID and revision inside a read/write transaction, writes the checkpoint and the new state together, and renews an 18-second editor lease (refreshed every six seconds). BroadcastChannel improves feedback between tabs, but the transaction check is what guarantees correctness. A stale tab becomes read-only until **Use this tab** takes over. A read-only tab acquires an expired lease automatically.
+- The UI previews immediately and shows a saving state. A failed write rolls back the preview and explains the error. Blocked storage falls back to memory with a visible warning.
+- Switching tables saves the outgoing game in the same transaction. Ending stores the standby snapshot used for the 24-hour reopen.
 
 ### Shared rooms
 
-- [ ] Two independent browser contexts and an eight-participant scenario share one consistent game.
-- [ ] Unapproved guests cannot read the board or mutate it; approved players cannot edit unauthorized seats.
-- [ ] Two guests racing for a seat produce one valid assignment.
-- [ ] Simultaneous life −1 operations both count; a stale absolute set/reset is rejected.
-- [ ] A duplicate operation applies once, including after lost acknowledgement and server restart.
-- [ ] Lost acknowledgements for rematch and host transfer return the original outcome on retry; room revisions never rewind.
-- [ ] Disconnect after submit, refresh while pending, out-of-order messages, and game reset while a command is in flight reconcile correctly.
-- [ ] Reconnect restores the assigned seat and current server state; a revoked/expired session cannot resume access.
-- [ ] Shared undo cannot roll back an intervening player's changes.
-- [ ] Every client sees the same recorded dice result; rejoin does not generate another roll.
-- [ ] Join lock, invitation rotation, removal, host transfer, and room expiry work as described.
-- [ ] Host phone sleep does not end the room; disconnected controls pause and recover honestly.
-- [ ] Foreground HTTP session renewal preserves a valid guest identity; expired/revoked authority cannot be renewed, and shared timers tolerate skewed phone clocks.
-- [ ] Switching/forking between modes never silently merges or overwrites games.
+- The server is authoritative; clients submit commands, never whole-state replacements. HTTP and WebSocket commands share one validation and authorization path.
+- Authenticate and validate first, then look up an existing receipt for this actor and operation before any mutable role or match checks. An identical retry returns its original receipt; reusing an ID with a different payload fails. A revoked member never receives a new private snapshot.
+- New operations check membership and permissions. Relative changes apply to the current state; absolute and administrative changes require the current revision. The new game, room revision, event and receipt commit in one SQLite transaction, and acknowledgements and broadcasts happen only after commit.
+- The room revision is monotonic for the life of the room, including across rematches. Receipts are kept for the current and previous match and outlive the 200-entry history.
+- Each room keeps at most `ROOM_RECEIPT_LIMIT` receipts behind a durable retry floor. An unknown envelope behind the floor is refused for manual review and never reapplied.
+- Clients save each envelope locally (after schema validation) before sending, render pending relative changes on top of confirmed state, and remove an envelope on its acknowledgement. Requests have a 10-second deadline and are cancelled when the connection generation changes.
+- After an interruption, clients retry recorded IDs, fetch the current state, then enable input. An envelope refused outright (HTTP 400/409) is set aside with a notice so it cannot block later reconnects.
+- Disconnects pause input and never quietly queue new edits. **Continue a copy on this device** forks the last confirmed snapshot into an independent local game that never merges back.
+- Broadcasts coalesce over 16 ms, reuse one encoded game per room state, add per-recipient membership overlays, and skip a duplicate frame for the actor who already has it.
 
-### UX, browser, and deployment
+### Server boundaries
 
-- [ ] Inspect 320×568, 390×844, 844×390, tablet, and desktop layouts with 2/4/6/8 seats.
-- [ ] Primary journeys work in iPhone Safari and Android Chrome browser tabs, including keyboard entry, safe areas, joining, and JSON import/export.
-- [ ] Phone lock/unlock, app switching, interrupted touches, and background socket suspension restore a usable and synchronized board.
-- [ ] Installed/home-screen mode and mobile install guidance are tested separately; physical-device results are distinguished from emulation.
-- [ ] No clipped values, accidental overlay taps, tiny targets, or inaccessible offscreen seats.
-- [ ] Keyboard/screen-reader dialogs, focus restoration, contrast, zoom, and reduced motion work.
-- [ ] Life feedback is immediate; eight-player animations stay smooth on a representative phone.
-- [ ] Target input response below 100 ms locally and shared committed updates below 300 ms on a healthy LAN; record measurements, not unsupported guarantees.
-- [ ] Optional heavy dice assets load on demand; no routine animation blocks game input.
-- [ ] Local mode reopens offline after a supported HTTPS visit; a service-worker update does not reset a game.
-- [ ] LAN HTTP core features work without secure-context API crashes.
-- [ ] Docker starts non-root, becomes healthy, serves routes/assets, and passes a create/join/update smoke test.
-- [ ] Container recreation with the same volume preserves rooms, guest memberships, and operation deduplication.
-- [ ] Backup/restore is verified, and both target CPU architectures start the native database dependency.
-- [ ] HTTPS reverse-proxy/WebSocket behavior is checked; publication instructions distinguish prepared artifacts from actually published images.
+- Origins must match `PUBLIC_ORIGIN`. State-changing HTTP and WebSocket commands require CSRF tokens, and session bootstrap requires the protocol header. Messages and commands are limited to 16 KB, with a 1 MB outbound socket buffer.
+- Commands share session (60 burst, 30/s) and room (160 burst, 80/s) budgets across tabs and transports. Socket caps default to 512 overall, 64 per room and 12 per guest session.
+- Room creation and join attempts have their own rate limits. Heartbeats use jittered reconnect backoff.
+- Rooms expire 30 days after the last committed gameplay or administrative activity; presence and heartbeats do not extend them. A cleanup runs every minute.
+- Logs contain fixed event names, route templates, request IDs and sanitized error categories. They never contain cookies, tokens, invitation URLs, player names or payloads.
 
-## 13. Explicit later additions
+## 10. Offline behavior and PWA updates
 
-Accounts and cross-device personal history; optional cloud sync of local games; searchable cards/art; deck integrations; full team formats including Two-Headed Giant; tournament/match statistics; advanced mana/storm/phase tools; dungeon and Planechase assistance; spectator links; richer 3D dice; and multi-instance server hosting.
+- After a successful load over HTTPS or localhost, the service worker reopens the app offline. One-device games stay fully usable offline. A shared room needs its server and follows the outage behavior above. LAN rooms work without internet if every device can reach the host.
+- Plain HTTP on a LAN supports core play and saving. ID creation falls back to `getRandomValues()`, but installation, offline reopening and wake lock need a secure context.
+- Only application assets are precached, including fonts, icons, finish SVGs and lazy chunks. Viewed art crops go in a separate bounded runtime cache. `/api/` responses are `no-store` and are never cached or answered with the app shell.
+- Hashed assets are immutable, while HTML and the service worker revalidate.
+- An update shows a prompt, waits for **Save & update** and pending saves, then asks for confirmation. It never reloads in the middle of play. Migrations preserve valid games and refuse unsupported future versions.
+- iPhone users get Add to Home Screen guidance. Installed apps and browser tabs may keep separate storage.
 
-Keep stable IDs, shared domain functions, versioned storage, and clear guest membership boundaries so these can be added later. Do not build speculative frameworks for them now.
+## 11. Development, Docker and distribution
 
-## 14. Copy/paste instruction for Sol
+### Local development
 
-> Read `BUILD_PLAN.md` in full and implement the application in this directory. Assume 99% of users are on iPhone or Android: design and test the entire experience for mobile browsers first, with no installation requirement. Deliver both One device and Shared room modes, account-free resume, all required game trackers, polished responsive fantasy styling and animations, focused tests, local development scripts, and Docker/Compose packaging. Follow the milestone order, verify each gate, preserve any existing user changes, and make routine implementation decisions autonomously. Keep the domain shared between local and server modes. Do not replace anonymous browser/session persistence with fingerprinting or introduce account registration. Prepare publication files and documentation; publishing to a real GitHub/registry destination is a separate user-directed step. Finish with exact run commands, verification results, and any concrete remaining limitations.
+```sh
+npm ci
+npm run dev          # Vite on :5173 proxying HTTP and WebSockets to the API on :8080; data in .mtg-data/
+npm run lint
+npm run typecheck
+npm test             # Vitest unit and integration suites
+npm run build        # typecheck, client build, server compile
+npm start            # serve dist/ on :8080 (reads .env if present)
+npm run test:e2e     # Playwright, Chromium and WebKit phone projects
+npm run test:pwa     # production offline/update checks in both engines
+npm run test:proxy   # HTTPS cookies, CSRF and WSS through a temporary TLS proxy
+npm run test:lan     # real insecure LAN origin
+docker build -t mtg-util:local . && npm run test:container
+```
+
+Phones on the LAN need the computer's address, for example `PUBLIC_ORIGIN=http://192.168.1.50:5173 ALLOW_INSECURE_HTTP=true npm run dev`. A phone's `localhost` is the phone itself. If port 8080 is already used by a running Docker install, run browser tests with a separate `PORT` and data directory.
+
+### Docker
+
+- The `Dockerfile` is multi-stage: install dependencies, build and prune, then a slim runtime. It runs as the non-root `node` user on `0.0.0.0:8080`, keeps data in `/data`, shuts down cleanly and has a `PORT`-aware health check on `/api/health`. The runtime image includes `scripts/backup.mjs` and `scripts/diagnostics.mjs`.
+- `compose.yaml` pulls `${MTG_IMAGE:-ghcr.io/addison16/commandtable:latest}`. `compose.local.yaml` builds the checkout as `mtg-util:local`. Both use project `mtg-util`, service `mtg-util`, volume `mtg-util-data`, `init: true` and `restart: unless-stopped`. Run only one at a time.
+- Configuration (see `.env.docker.example`): `PUBLIC_ORIGIN`, `ALLOW_INSECURE_HTTP`, `TRUST_PROXY_HOPS`, `ROOM_TTL_DAYS` (30), `SESSION_TTL_DAYS` (90), `MAX_CONNECTIONS` (512), `MAX_ROOM_CONNECTIONS` (64), `ROOM_RECEIPT_LIMIT` (20,000), `RETRY_REVISION_WINDOW` (10,000), `BACKUP_INTERVAL_HOURS` (24), `BACKUP_KEEP` (14) and optional `BACKUP_COPY_DIR`.
+- Startup fails on contradictory settings: HTTP requires `ALLOW_INSECURE_HTTP=true`, and HTTPS requires it to be false.
+- Local games live in browsers. Shared games, sessions, memberships and receipts live in the volume. Recreating the container with the same volume and origin preserves rooms; `down -v` deletes them.
+- `node scripts/backup.mjs` makes a verified online SQLite backup. The server also makes verified, checksummed backups at startup when one is overdue and then every 24 hours, keeping 14. `scripts/diagnostics.mjs` reads the private `/data/operations.json`, which is refreshed every 30 seconds. Off-host protection requires mounting a separate destination.
+
+### Publishing
+
+- `.github/workflows/ci.yml` (**Verify**) runs on pushes to main and pull requests: lint, typecheck, unit tests, build, Playwright, PWA and proxy smokes, plus native amd64 and arm64 container smoke tests.
+- `.github/workflows/release.yml` runs on `vX.Y.Z` tags. `scripts/check-release.mjs` checks that the tag matches `package.json` and the lockfile and that a license exists. The workflow then reruns Verify and pushes multi-architecture images to `ghcr.io/<owner>/commandtable` and the `commanders-table` compatibility name, tagged with the version and commit SHA, plus `stable` and `latest` for non-prerelease tags. It also attaches `compose.yaml` and `docker.env.example` to the GitHub release.
+- `refresh-latest.yml` and `migrate-image.yml` are manual maintenance workflows for the package display and the past image-name migration.
+- A release bumps `package.json` and `package-lock.json` together, adds `docs/releases/vX.Y.Z.md`, commits and tags. See [publishing a release](docs/deployment.md#publishing-a-release).
+- **Nothing is pushed, tagged, released or published without an explicit request from the owner.** Local builds, tests and updates to a local Docker install do not need that request.
+- Keep credentials, databases, backups, browser caches, generated reports and personal exports out of Git and out of Docker build contexts (`.gitignore`, `.dockerignore`).
+
+## 12. Verification and acceptance
+
+Write focused tests for invariants, persistence, authorization and sync failures rather than tests that repeat component internals. Combine automation with visual and touch review at phone sizes.
+
+- **Unit and integration (Vitest)**: `domain` (reducer and rules), `store`, `storage` and `tab-identity` (IndexedDB, leases, imports), `rooms` and `room-adapter` (authority, receipts, reconnect, retention), `cards`, `dice` and `dice-motion` (geometry, physics, symmetry), `player-statuses`, `recap`, `game-moments`, `host-setup`, `operations`, `traffic` and `socket-traffic`.
+- **Browser (Playwright, Chromium and WebKit phone projects)**: local play, rooms, live editing, join profiles, player save, commander art/reading/shortcuts, group life, recap, display and auto layout, appearance, dice colors, game moments, new game/rematch, recovery and sound, offline, accessibility (axe), editor tabs, and regression suites.
+- **Smoke scripts**: production PWA offline and update, HTTPS proxy with WSS, a real LAN origin, and container persistence/recreation/backup/restore.
+- **Viewports**: 320×568, 390×844, 844×390, 768×1024 and 1440×900, with 1–8 seats, no horizontal overflow and 44 px controls.
+- **Targets**: local input under 100 ms and shared committed updates under 300 ms on a healthy LAN. Record measurements, not guarantees (`docs/performance.json`).
+
+Record each verification with its date, counts, failures and deployment state in `docs/testing.md`. Automated browser coverage is not physical-device validation. The [physical-device checklist](docs/testing.md#physical-device-release-checklist) remains unverified: a real iPhone in Safari, a real Android phone in Chrome, installed mode, screen readers, prolonged battery and thermal behavior, and native ARM hardware.
+
+## 13. Not built: later additions
+
+Accounts and cross-device personal history; cloud sync of local games; deck integrations; full team formats including Two-Headed Giant; tournament or match statistics; advanced mana, storm and phase tools; dungeon and Planechase assistance; spectator links; an in-app QR scanner; shared redo; and multi-instance or network-filesystem hosting.
+
+Keep stable IDs, the shared domain, versioned storage and clear membership boundaries so these remain possible. Do not build speculative frameworks for them.
+
+## 14. Changes from the original specification
+
+These decisions were made during development, mostly at the owner's request, and supersede the September 15 plan:
+
+| Original plan | As built |
+| --- | --- |
+| Host can manage every seat in a room; optional "Friends can edit every seat" policy | Every approved player, including the host, edits only their own seat. The policy was removed: legacy values are ignored and enabling it is rejected. |
+| Host status never transfers automatically | It still never transfers on disconnect. When the host's session expires, cleanup promotes the longest-seated approved member. |
+| Include the recipient's own commander among damage sources | Own commanders are excluded and the reducer rejects them. |
+| Extra trackers (energy/experience/rad/custom counters, Monarch/Initiative) in Utilities | Removed from the UI. Legacy data is still read and displayed. |
+| Turn highlight and timer always available | Turn tracking is opt-in with **Next turn** beside Undo. The timer is in Utilities. |
+| Home with One device / Shared room cards | Quick 4 and Quick 2 starts plus Create/Join room on one screen; **New game** asks One phone or Multiple phones. |
+| Shared undo by the host regardless of actor | Undo is limited to the actor's own eligible action, plus the host's own table-control actions. |
+| CSS/SVG dice with Motion; 3D optional | Canvas2D 3D dice with rigid-body physics and no animation library. Motion for React, CSS Modules and React Testing Library were not adopted. |
+| Searchable cards and art as a later addition | Optional Scryfall artwork, card reader and rulings are built in. |
+| Single theme | Light/dark/system appearance with themes, accents, table finishes and coordinated looks. |
+| — | Added: commander Damage/Tax shortcuts, status badges, group life change, recap PNG, 24-hour reopen, elimination notice and winner screen, seat profiles at join, automatic rotation layouts, verified automatic backups and private diagnostics. |
+| Working name MTG Util; registry destination undecided | Command Table, published as `ghcr.io/addison16/commandtable` under PolyForm Noncommercial 1.0.0. Internal `mtg-util` identifiers remain. |
+
+## 15. Working on this codebase
+
+When continuing development:
+
+- Read this file, then the relevant section of `docs/architecture.md`, before changing behavior. Keep phones first, and keep both play modes on the shared domain.
+- Add every new game behavior as a validated command in `src/shared/schema.ts`, applied by the pure reducer. Keep server authorization, receipts and revision rules identical over HTTP and WebSocket.
+- Never change the compatibility identifiers in section 8. Give storage or schema changes a migration that preserves existing data, and record rollback limits in the docs.
+- Do not replace anonymous browser/session persistence with accounts or fingerprinting, and do not add external services to core play.
+- Verify with lint, typecheck, unit tests, build, the relevant Chromium/WebKit cases and smoke scripts. Record actual results and any limitations in `docs/testing.md`. Update the README, the docs and this file when behavior changes.
+- Present Docker/Compose installation and `latest` updates first in user-facing docs. When updating a running install, keep its Compose project, data volume and public origin, and take a verified backup first.
+- Publishing (pushes, tags, releases, images) is a separate step that happens only when the owner explicitly asks.

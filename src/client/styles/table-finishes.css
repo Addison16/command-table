@@ -14,6 +14,7 @@
     --finish-shadow: #02030a75;
     --finish-frame: #deca9f35;
     --finish-art: none;
+    --finish-art-portrait: none;
     --finish-grain: linear-gradient(transparent, transparent);
     --finish-light: linear-gradient(transparent, transparent);
     --finish-vignette: radial-gradient(ellipse at 50% 42%, transparent 30%, #00000030 100%);
@@ -40,6 +41,7 @@
   [data-table-finish='glow'] {
     --finish-hue: #9181b5;
     --finish-art: url('/table-finishes/astral-silk.svg');
+    --finish-art-portrait: url('/table-finishes/portrait/astral-silk.svg');
     --finish-grain: repeating-linear-gradient(113deg, #d5c2ee04 0 1px, transparent 1px 3px);
     --finish-light:
       radial-gradient(ellipse at 3% 2%, #cbae7447, transparent 48%),
@@ -49,6 +51,7 @@
   [data-table-finish='tabletop'] {
     --finish-hue: #c26b3d;
     --finish-art: url('/table-finishes/dragonfire.svg');
+    --finish-art-portrait: url('/table-finishes/portrait/dragonfire.svg');
     --finish-grain:
       radial-gradient(circle at 13% 75%, #f4ad5838 0 0.8px, transparent 1.6px),
       radial-gradient(circle at 83% 21%, #f8c87340 0 0.7px, transparent 1.7px),
@@ -63,6 +66,7 @@
   [data-table-finish='celestial'] {
     --finish-hue: #647cdb;
     --finish-art: url('/table-finishes/celestial-atlas.svg');
+    --finish-art-portrait: url('/table-finishes/portrait/celestial-atlas.svg');
     --finish-grain:
       radial-gradient(circle at 11% 24%, #e9d6a838 0 0.6px, transparent 1px),
       radial-gradient(circle at 73% 65%, #a2c6ff35 0 0.7px, transparent 1.2px);
@@ -75,6 +79,7 @@
   [data-table-finish='verdant'] {
     --finish-hue: #409975;
     --finish-art: url('/table-finishes/verdant-canopy.svg');
+    --finish-art-portrait: url('/table-finishes/portrait/verdant-canopy.svg');
     --finish-grain: repeating-linear-gradient(
       152deg,
       transparent 0 17px,
@@ -90,6 +95,7 @@
   [data-table-finish='obsidian'] {
     --finish-hue: #598fc3;
     --finish-art: url('/table-finishes/stormglass.svg');
+    --finish-art-portrait: url('/table-finishes/portrait/stormglass.svg');
     --finish-grain:
       radial-gradient(circle at 19% 14%, #aacfff24 0 0.6px, transparent 1.3px),
       radial-gradient(circle at 85% 72%, #a5c8e62e 0 0.7px, transparent 1.4px);
@@ -103,6 +109,7 @@
   [data-table-finish='aurora'] {
     --finish-hue: #7388d7;
     --finish-art: url('/table-finishes/prismatic-veil.svg');
+    --finish-art-portrait: url('/table-finishes/portrait/prismatic-veil.svg');
     --finish-grain: repeating-linear-gradient(
       122deg,
       transparent 0 8px,
@@ -118,6 +125,7 @@
   [data-table-finish='gilded'] {
     --finish-hue: #a89162;
     --finish-art: url('/table-finishes/gilded-marble.svg');
+    --finish-art-portrait: url('/table-finishes/portrait/gilded-marble.svg');
     --finish-grain:
       repeating-linear-gradient(123deg, transparent 0 33px, var(--finish-stone) 34px, transparent 35px 93px),
       repeating-linear-gradient(31deg, transparent 0 58px, var(--finish-stone) 60px, transparent 63px 171px);
@@ -281,10 +289,114 @@
 }
 
 @layer responsive {
-  /* Coarse-pointer layouts also paint the material to the bottom of the page. */
-  :root[data-table-finish] body {
-    background-size: cover;
-    background-repeat: no-repeat;
+  @media (max-width: 999px) {
+    /* The board fills its flex slot; its shape determines the shape of each seat. */
+    .board {
+      container: table-surface / size;
+    }
+    :root[data-table-finish] .player-tile:not(:has(.with-commander-art)):not(.eliminated) {
+      background-color: color-mix(in srgb, var(--wash) 8%, var(--finish-tile));
+    }
+    .life-controls .hold {
+      --life-control-surface: color-mix(in srgb, var(--surface) 72%, transparent);
+      --life-control-ring: color-mix(in srgb, var(--player-ink, var(--player)) 23%, transparent);
+    }
+    .life-controls .hold:not(:disabled) {
+      opacity: 1;
+    }
+    @container table-surface (max-aspect-ratio: 1 / 1) {
+      .board:is(.seats-1, .seats-3, .seats-4) .player-tile {
+        --finish-art: var(--finish-art-portrait);
+      }
+    }
+    @container table-surface (max-aspect-ratio: 2 / 3) {
+      .board:is(.seats-5, .seats-6) .player-tile {
+        --finish-art: var(--finish-art-portrait);
+      }
+    }
+    @container table-surface (max-aspect-ratio: 1 / 2) {
+      .board:is(.seats-2, .seats-7, .seats-8) .player-tile {
+        --finish-art: var(--finish-art-portrait);
+      }
+    }
+  }
+  @media (max-width: 999px) and (orientation: portrait) {
+    :root[data-table-finish] body {
+      /* Size by width so a long home page does not magnify the material again. */
+      background-image:
+        var(--finish-art-portrait), var(--finish-grain), var(--finish-light), var(--finish-vignette);
+      background-size:
+        100% auto,
+        cover,
+        cover,
+        cover;
+      background-position: center top;
+    }
+    .my-view .player-tile {
+      --finish-art: var(--finish-art-portrait);
+    }
+  }
+  @media (max-width: 600px) {
+    /* Show an actual tall player panel next to readable names and descriptions. */
+    .finish-options {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+    }
+    .finish-card {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      grid-template-rows: auto 1fr;
+      column-gap: 14px;
+      row-gap: 6px;
+      padding: 10px;
+      border-radius: 12px;
+    }
+    .finish-preview {
+      grid-row: 1 / 3;
+      min-height: 0;
+      aspect-ratio: 3 / 5;
+      background-image:
+        var(--finish-art-portrait), var(--finish-grain), var(--finish-light), var(--finish-vignette);
+    }
+    .finish-card .theme-card-name {
+      align-self: end;
+      padding-top: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .finish-card .theme-card-description {
+      font-size: 12px;
+      line-height: 1.6;
+      max-width: 26ch;
+    }
+    .finish-preview-material {
+      left: 6px;
+      top: 9px;
+      font-size: 7px;
+      letter-spacing: 0.8px;
+    }
+    .finish-preview-life {
+      font-size: 42px;
+    }
+    .finish-preview-seats {
+      gap: 4px;
+    }
+    .finish-preview-seats i {
+      width: 9px;
+    }
+    .appearance-options .theme-card-description {
+      font-size: 12px;
+    }
+    .appearance-options .theme-card-name {
+      font-size: 13px;
+    }
+    .appearance-options .theme-card {
+      padding: 10px;
+      gap: 8px;
+    }
+    .appearance-options .accent-card {
+      font-size: 12px;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .finish-card {

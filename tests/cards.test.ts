@@ -666,4 +666,33 @@ describe('public card API', () => {
       await app.close();
     }
   });
+
+  it('shares one client budget across every card route', async () => {
+    const fetcher = vi.fn<typeof fetch>(async (url) =>
+      Response.json(
+        String(url).includes('/autocomplete')
+          ? { data: ['Example Commander'] }
+          : String(url).includes('/rulings')
+            ? rulingsUpstream
+            : upstream,
+      ),
+    );
+    const { app } = await buildApp({
+      filename: ':memory:',
+      config: readConfig({ PUBLIC_ORIGIN: 'https://table.example' }),
+      cards: new CardLookupService({ ...clock(), fetcher }),
+    });
+    try {
+      for (const path of ['details?q=Example', 'resolve?q=Example', `rulings?id=${id}`])
+        for (let i = 0; i < 30; i++) expect((await app.inject(`/api/cards/${path}`)).statusCode).toBe(200);
+      for (let i = 0; i < 10; i++) expect((await app.inject('/api/cards/suggest?q=Ex')).statusCode).toBe(200);
+      // Suggestions have used 10 of their own 90, but the shared 100 is spent.
+      const limited = await app.inject('/api/cards/suggest?q=Ex');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json().error).toContain('Too many requests');
+      expect(fetcher).toHaveBeenCalledTimes(3);
+    } finally {
+      await app.close();
+    }
+  });
 });

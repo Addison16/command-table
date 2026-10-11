@@ -3,6 +3,7 @@ import { canUndoRoomAction } from '../../shared/permissions.js';
 import { newId } from '../../shared/random.js';
 import {
   PROTOCOL,
+  envelopeSchema,
   recentRoomSchema,
   type AdminCommand,
   type Command,
@@ -25,6 +26,8 @@ import {
 let csrf = '',
   socket: WebSocket | undefined,
   generation = 0,
+  connectionController: AbortController | undefined,
+  connectingGeneration: number | undefined,
   reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let pending: Envelope[] = [],
   writing = Promise.resolve(),
@@ -55,21 +58,39 @@ class ApiError extends Error {
     super(message);
   }
 }
-async function api<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    credentials: 'same-origin',
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-MTG-Client': String(PROTOCOL),
-      ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new ApiError(data.error ?? 'The server could not complete this action.', res.status);
-  return data as T;
+async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  const timeout = setTimeout(cancel, 10_000);
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) controller.abort();
+  try {
+    const res = await fetch(`/api${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-MTG-Client': String(PROTOCOL),
+        ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await res.json();
+    if (controller.signal.aborted) throw new DOMException('Request canceled', 'AbortError');
+    if (!res.ok) throw new ApiError(data.error ?? 'The server could not complete this action.', res.status);
+    return data as T;
+  } catch (error) {
+    if (controller.signal.aborted && !signal?.aborted)
+      throw new Error('The connection timed out. Your submitted actions remain saved for reconciliation.', {
+        cause: error,
+      });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', cancel);
+  }
 }
 export function roomArchives(roomId: string) {
   return api<Game[]>(`/rooms/${roomId}/archives`);
@@ -122,9 +143,9 @@ export async function resumeRoom(roomId: string, reopen = false) {
     await send({ type: 'reopen' });
   }
 }
-async function session(reset = false) {
+async function session(reset = false, signal?: AbortSignal) {
   const start = Date.now();
-  const s = await api<{ csrf: string; serverTime: number }>('/session', { reset });
+  const s = await api<{ csrf: string; serverTime: number }>('/session', { reset }, signal);
   csrf = s.csrf;
   useApp.setState({ clockOffset: s.serverTime - (start + Date.now()) / 2 });
 }
@@ -171,10 +192,24 @@ function acceptView(view: RoomView, midpoint?: number) {
   // Full snapshots converge immediately even across gaps; refresh HTTP state to repair clock/history too.
   if (!midpoint && state.connected && state.room?.id === view.id && view.revision > state.room.revision + 1) {
     const started = Date.now();
-    void api<RoomView>(`/rooms/${view.id}`)
-      .then((fresh) => acceptView(fresh, (started + Date.now()) / 2))
-      .catch(report);
+    const gen = generation;
+    void api<RoomView>(`/rooms/${view.id}`, undefined, connectionController?.signal)
+      .then((fresh) => {
+        if (generation === gen) acceptView(fresh, (started + Date.now()) / 2);
+      })
+      .catch((error) => {
+        if (generation === gen) report(error);
+      });
   }
+  // Presence and clock frames still update the room, but unchanged game data
+  // keeps its object identity so duplicate acknowledgements do not rerender it.
+  if (
+    state.room?.id === view.id &&
+    state.room.revision === view.revision &&
+    state.confirmed?.id === view.game?.id &&
+    state.confirmed?.revision === view.game?.revision
+  )
+    view = { ...view, game: state.confirmed };
   useApp.setState({
     room: view,
     confirmed: view.game,
@@ -215,8 +250,12 @@ function pause() {
 }
 function disconnect() {
   ++generation;
+  connectionController?.abort();
+  connectionController = undefined;
+  connectingGeneration = undefined;
   activeRoom = '';
   clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
   if (socket) {
     socket.onclose = null;
     socket.close();
@@ -229,6 +268,7 @@ function schedule(roomId: string, gen: number) {
   clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(
     () => {
+      reconnectTimer = undefined;
       void connectRoom(roomId);
     },
     Math.min(15000, 700 * 2 ** Math.min(attempts++, 5)) + Math.random() * 450,
@@ -236,7 +276,13 @@ function schedule(roomId: string, gen: number) {
 }
 export async function connectRoom(roomId: string) {
   clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
   const gen = ++generation;
+  connectionController?.abort();
+  const controller = new AbortController();
+  connectionController = controller;
+  connectingGeneration = gen;
+  lastPong = Date.now();
   activeRoom = roomId;
   pause();
   if (socket) {
@@ -253,7 +299,7 @@ export async function connectRoom(roomId: string) {
       await drained.catch(() => {});
     } while (drained !== writing);
     if (generation !== gen) return;
-    await session();
+    await session(false, controller.signal);
     if (generation !== gen) return;
     const savedPending = await repository.pending(roomId);
     // Storage can finish after the user has left this room. Keep that result
@@ -263,13 +309,29 @@ export async function connectRoom(roomId: string) {
     useApp.setState({ mode: 'room', pending: pending.length });
     // Re-submit only durable envelopes. Receipt lookup precedes mutable roles/game IDs on the server.
     for (const env of [...pending]) {
-      const result = await api<{ receipt: Receipt; view?: RoomView }>(`/rooms/${roomId}/command`, env);
+      let outcome: Receipt;
+      try {
+        outcome = (
+          await api<{ receipt: Receipt; view?: RoomView }>(`/rooms/${roomId}/command`, env, controller.signal)
+        ).receipt;
+      } catch (e) {
+        // The server refused to record this envelope at all, so no retry can
+        // succeed. Set it aside with a notice instead of blocking the room.
+        if (generation !== gen || !(e instanceof ApiError) || ![400, 409].includes(e.status)) throw e;
+        outcome = {
+          operationId: env.operationId,
+          revision: env.baseRevision,
+          gameId: env.gameId,
+          ok: false,
+          error: `A submitted action could not be applied and was set aside. ${e.message}`,
+        };
+      }
       if (generation !== gen) return;
-      await receipt(result.receipt);
+      await receipt(outcome);
       if (generation !== gen) return;
     }
     const start = Date.now();
-    const view = await api<RoomView>(`/rooms/${roomId}`);
+    const view = await api<RoomView>(`/rooms/${roomId}`, undefined, controller.signal);
     if (generation !== gen) return;
     acceptView(view, (start + Date.now()) / 2);
     const url = new URL(`/api/rooms/${roomId}/live?protocol=${PROTOCOL}`, location.href);
@@ -322,6 +384,8 @@ export async function connectRoom(roomId: string) {
         if (msg.type === 'error') {
           for (const id of confirmations.keys()) finishConfirmation(id, false);
           report(new Error(msg.error));
+          // An error carries no receipt. Reconnecting settles whatever is still unconfirmed.
+          if (pending.length) void connectRoom(roomId);
         }
       } catch {
         report(new Error('An invalid server message was ignored. Reconnecting for a fresh snapshot.'));
@@ -358,6 +422,8 @@ export async function connectRoom(roomId: string) {
       report(new Error(`Connection unavailable. ${errorMessage(e)}`));
       schedule(roomId, gen);
     }
+  } finally {
+    if (connectingGeneration === gen) connectingGeneration = undefined;
   }
 }
 async function send(command: Command | AdminCommand, groupId?: string, track?: (envelope: Envelope) => void) {
@@ -410,6 +476,11 @@ async function send(command: Command | AdminCommand, groupId?: string, track?: (
     command,
     groupId,
   };
+  // The server answers a malformed envelope without a receipt, so one must never be queued.
+  if (!envelopeSchema.safeParse(env).success)
+    throw new Error(
+      'Please check your values. Use whole numbers within the supported limits and names up to 40 characters.',
+    );
   track?.(env);
   // A durable envelope is saved before any bytes leave this device.
   pending.push(env);
@@ -450,7 +521,10 @@ async function send(command: Command | AdminCommand, groupId?: string, track?: (
   targetSocket.send(JSON.stringify({ type: 'command', csrf, envelope: env }));
 }
 function savePlayer(
-  command: Extract<Command, { type: 'editPlayer' | 'groupLife' | 'damage' }>,
+  command: Extract<
+    Command,
+    { type: 'editPlayer' | 'groupLife' | 'damage' | 'set' | 'damageSet' | 'castSet' }
+  >,
 ): Promise<boolean> {
   return new Promise((resolve) => {
     let operationId: string | undefined;
@@ -516,6 +590,11 @@ export async function joinRoom(code: string, displayName: string) {
 document.addEventListener('visibilitychange', () => {
   if (useApp.getState().mode !== 'room' || !activeRoom) return;
   if (document.hidden) {
+    ++generation;
+    connectionController?.abort();
+    connectingGeneration = undefined;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
     pause();
     socket?.close();
   } else void connectRoom(activeRoom);
@@ -525,12 +604,21 @@ addEventListener('online', () => {
 });
 addEventListener('offline', () => {
   if (activeRoom) {
+    ++generation;
+    connectionController?.abort();
+    connectingGeneration = undefined;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
     pause();
     socket?.close();
   }
 });
 setInterval(() => {
   if (!activeRoom || document.hidden) return;
+  if (!useApp.getState().connected) {
+    if (connectingGeneration === undefined && reconnectTimer === undefined) void connectRoom(activeRoom);
+    return;
+  }
   if (Date.now() - lastPong > 35000) {
     void connectRoom(activeRoom);
     return;
@@ -538,9 +626,12 @@ setInterval(() => {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }));
 }, 15000);
 setInterval(() => {
-  if (activeRoom && !document.hidden && useApp.getState().connected)
-    void session().catch(() => {
+  if (activeRoom && !document.hidden && useApp.getState().connected) {
+    const gen = generation;
+    void session(false, connectionController?.signal).catch(() => {
+      if (generation !== gen) return;
       pause();
       socket?.close();
     });
+  }
 }, 15 * 60000);

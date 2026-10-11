@@ -20,7 +20,7 @@ The commands below use a POSIX shell, such as a Linux/macOS terminal or a WSL te
 
 ## Install the published image
 
-For a first installation, download **compose.yaml** and **docker.env.example** from the [latest GitHub release](https://github.com/Addison16/commanders-table/releases/latest). Put both in a dedicated folder, open a terminal there, and copy the environment example:
+For a first installation, download **compose.yaml** and **docker.env.example** from the [v0.3.1 Docker installation downloads](https://github.com/Addison16/command-table/releases/tag/v0.3.1). Put both in a dedicated folder, open a terminal there, and copy the environment example:
 
 ```sh
 cp docker.env.example .env
@@ -75,7 +75,7 @@ A container already added without the template keeps a blank icon until it is re
 | --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------- |
 | `PUBLIC_ORIGIN`       | `http://localhost:8080`                 | Exact browser origin, including a nonstandard port; no path, credentials, or query |
 | `ALLOW_INSECURE_HTTP` | `true` in the Compose example           | Use `true` for deliberate local/LAN HTTP; use `false` for HTTPS                    |
-| `PORT`                | `8080` inside the container             | Retain 8080 inside the image for its health check                                  |
+| `PORT`                | `8080` inside the container             | Listening port in the container; the health check follows it. 8080 suits Compose   |
 | `DATA_DIR`            | `/data` inside the container            | SQLite database and sidecars in the persistent volume                              |
 | `ROOM_TTL_DAYS`       | `30`                                    | Days since last committed room activity                                            |
 | `SESSION_TTL_DAYS`    | `90`                                    | Rolling guest-cookie/session lifetime                                              |
@@ -128,9 +128,36 @@ docker compose -p mtg-util -f compose.yaml cp \
   mtg-util:/data/backups/before-update.sqlite ./backups/before-update.sqlite
 ```
 
-The backup uses SQLite's online backup API, validates the result with `integrity_check` and refuses to overwrite an existing destination. Choose a fresh filename in both commands, retain the copied file outside the container and keep another copy off the host. Save the Compose file and `.env` alongside your operational backups.
+The backup uses SQLite's online backup API, validates integrity and foreign keys, makes the copy self-contained without WAL sidecars and refuses to overwrite an existing destination. Choose a fresh filename in both commands, retain the copied file outside the container and keep another copy off the host. Save the Compose file and `.env` alongside your operational backups.
 
 Do not copy only a live `mtg-util.sqlite`: committed data may still be in its WAL. The online backup command handles a running server safely. The [restore procedure](#restore-a-verified-backup) below uses the copied file.
+
+## Automatic backups and private diagnostics
+
+Source builds containing the maintenance changes automatically create a verified SQLite backup when startup finds no recent copy, then every `BACKUP_INTERVAL_HOURS` (default 24). Files live under `/data/backups`; `BACKUP_KEEP` defaults to 14. Rotation only removes files named by the automatic scheduler. Manual backups and browser-local JSON exports remain separate. The scheduler verifies integrity, foreign keys and a SHA-256 checksum before publishing each self-contained file. It completes an in-progress backup before shutdown.
+
+Inspect aggregate server health and backup freshness inside the running Docker service:
+
+```sh
+docker compose -p mtg-util -f compose.yaml exec mtg-util node scripts/diagnostics.mjs
+```
+
+The private `/data/operations.json` refreshes every 30 seconds and includes request/error/command counts, request/event-loop p95, active sockets/rooms, database/WAL bytes, available disk space and last verified backup age. `/data/backup-status.json` records the latest filename and checksum. Neither contains credentials or player data. Check that diagnostics are fresh, backup age stays near the configured interval, disk availability stays sufficient, and no new backup/request failure events appear in container logs.
+
+Default automatic backups share the database’s Docker volume. For a separate verified destination, mount a second disk or a remote filesystem and configure an override, for example:
+
+```yaml
+services:
+  mtg-util:
+    environment:
+      BACKUP_COPY_DIR: /backup-copy
+    volumes:
+      - /mnt/command-table-backups:/backup-copy
+```
+
+Run Compose with both the existing file and this override. Ensure the mounted directory is writable by the image’s `node` user. The scheduler checks the copied database and checksum and reports `copyVerifiedAt` or `copyFailureAt`; a local successful backup remains available if the second destination fails. A directory on the same host is not off-host storage. Configure the mount or your normal remote backup service for protection from host loss, and periodically rehearse the stopped restore procedure with an isolated volume.
+
+Shared-room capacity settings are `MAX_CONNECTIONS` (512), `MAX_ROOM_CONNECTIONS` (64), `ROOM_RECEIPT_LIMIT` (20,000) and `RETRY_REVISION_WINDOW` (10,000). They bound concurrent sockets and retained acknowledgements. An action whose original acknowledgement has expired is explicitly refused for review; it is never silently reapplied. These limits do not delete current games or pending browser records.
 
 ## Update to the latest release
 

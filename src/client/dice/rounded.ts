@@ -21,13 +21,17 @@ const mean = (points: Vec[]) =>
   );
 const cache = new Map<string, RoundedDie>();
 
+/** Radius of the sphere that rounds every corner and edge of a unit die. */
+export const cornerRadius = (sides: number) =>
+  sides === 2 ? 0.045 : sides === 6 ? 0.1 : sides === 4 ? 0.075 : 0.065;
+
 // A smaller polyhedron swept by a sphere: flat numbered faces, cylindrical
 // edge fillets and spherical corner caps form a continuous, closed surface.
 export function roundedGeometry(sides: number, segments = 4): RoundedDie {
   const key = `${sides}:${segments}`;
   if (cache.has(key)) return cache.get(key)!;
   const source = geometry(sides);
-  const radius = sides === 2 ? 0.045 : sides === 6 ? 0.1 : sides === 4 ? 0.075 : 0.065;
+  const radius = cornerRadius(sides);
   const inset = (point: Vec, normal: Vec) => add(mul(point, 1 - radius), mul(normal, radius));
   const faces = source.map((f) => ({
     ...f,

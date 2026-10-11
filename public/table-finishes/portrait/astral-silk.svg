@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 800" fill="none">
+
+  <defs>
+    <linearGradient id="silk-mobile" x1="0" y1="0" x2="480" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c6a25c" stop-opacity=".24"/><stop offset=".46" stop-color="#e9dfc6" stop-opacity=".04"/><stop offset="1" stop-color="#9480c9" stop-opacity=".22"/>
+    </linearGradient>
+    <linearGradient id="thread-mobile" x1="0" y1="0" x2="480" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e5d4ad" stop-opacity=".24"/><stop offset=".5" stop-color="#d2c4e6" stop-opacity=".04"/><stop offset="1" stop-color="#e2cd9a" stop-opacity=".2"/>
+    </linearGradient>
+  </defs>
+  <!-- Satin folds flow down the panel instead of becoming a magnified horizontal band. -->
+  <path d="M-70 52C130 21 64 313 162 524S385 785 550 640L550 743C342 896 125 643 103 473S42 147-70 177Z" fill="url(#silk-mobile)"/>
+  <g stroke="url(#thread-mobile)">
+    <path d="M-55 86C110 48 65 313 135 481S328 786 532 698"/>
+    <path d="M-55 98C98 62 54 324 123 493S318 798 532 710"/>
+    <path d="M-55 110C86 76 43 335 111 505S308 810 532 722"/>
+  </g>
+  <path d="M343-60C453 119 411 229 530 298M-45 505C33 598 39 707-35 829" stroke="url(#silk-mobile)" stroke-width="40"/>
+</svg>

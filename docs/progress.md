@@ -1,6 +1,14 @@
 # Implementation milestones
 
-The original specification is preserved in `BUILD_PLAN.md`.
+[BUILD_PLAN.md](../BUILD_PLAN.md) describes the product and implementation as built; the original September 15 specification remains in its Git history.
+
+## October 11 GitHub source update
+
+The current source adds elimination and winner screens, physically simulated dice, coordinated table looks, commander artwork framing, separately loaded optional tools, and server reliability improvements: SQLite schema 3 with bounded receipts and a retry floor, shared command budgets, socket admission caps, verified automatic backups and private diagnostics. It combines the pending local work with the Archenemy preset, centered dice layout, commander suggestion fixes, home game lists and Docker manager icon support already on GitHub. Archenemy team victories keep their shared outcome instead of naming a surviving teammate as an individual winner.
+
+The latest GitHub release is [v0.3.2.1](https://github.com/Addison16/command-table/releases/tag/v0.3.2.1). Docker installation templates remain available with v0.3.1, and the source update awaits a new Docker release. The [verification record](testing.md) records this update's checks and the earlier local Docker deployments with their verified backups.
+
+## v0.3.1
 
 **[Command Table v0.3.1 is published](https://github.com/Addison16/commanders-table/releases/tag/v0.3.1)** at the user's request. It includes light/dark/device appearance, improved dense mobile layouts, and the shallower phone background glow. [Main verification](https://github.com/Addison16/commanders-table/actions/runs/35945461845) and the [release workflow](https://github.com/Addison16/commanders-table/actions/runs/35945462213) passed: 172 unit/integration checks, 147 hosted browser cases with three expected skips, production PWA/HTTPS checks and native amd64/arm64 container verification. Anonymous downloads and pulls pass; both Docker image names provide matching `0.3.1`, `stable` and `latest` platform images. The downloaded public image passed a separate x64 persistence and backup/restore test. Private local documents and unrelated media remain excluded. The existing local Docker service, configuration and data were not replaced during publication.
 

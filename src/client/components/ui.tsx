@@ -83,6 +83,13 @@ const paths: Record<string, ReactNode> = {
       <path d="m3 6 4 5 5-7 5 7 4-5-2 13H5ZM5 22h14" />
     </>
   ),
+  skull: (
+    <>
+      <path d="M5 11a7 7 0 0 1 14 0c0 2.500-1.100 4.200-2.500 5.200V20h-9v-3.800C6.100 15.200 5 13.500 5 11Z" />
+      <path d="M9.500 11.500h.01M14.500 11.500h.01" strokeWidth="2.6" />
+      <path d="M10.500 20v-2M13.500 20v-2" />
+    </>
+  ),
   rotate: (
     <>
       <path d="M20 9a8 8 0 1 0 0 7M20 3v6h-6" />

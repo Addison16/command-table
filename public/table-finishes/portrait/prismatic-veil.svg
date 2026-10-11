@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 800" fill="none">
+
+  <defs>
+    <linearGradient id="opal-mobile" x1="0" y1="0" x2="480" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#58bba5" stop-opacity=".29"/><stop offset=".35" stop-color="#8cb7c4" stop-opacity=".07"/><stop offset=".65" stop-color="#976ad5" stop-opacity=".13"/><stop offset="1" stop-color="#d788b1" stop-opacity=".3"/>
+    </linearGradient>
+    <linearGradient id="rim-mobile" x1="0" y1="0" x2="480" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#abd5c0" stop-opacity=".42"/><stop offset=".5" stop-color="#bdb0e2" stop-opacity=".05"/><stop offset="1" stop-color="#f3b3df" stop-opacity=".34"/>
+    </linearGradient>
+  </defs>
+  <path d="M-65-35C165 9 46 259 160 542S430 795 546 680L546 790C361 941 172 682 113 498S110 139-65 65Z" fill="url(#opal-mobile)"/>
+  <path d="M-65-12C155 29 56 263 140 503S347 827 535 748" stroke="url(#rim-mobile)" stroke-width="1.5"/>
+  <path d="M365-42C508 115 384 279 546 349M-45 565C38 633 82 754-35 854" stroke="url(#opal-mobile)" stroke-width="52"/>
+  <g stroke="#c4c0e8" stroke-opacity=".2">
+    <path d="M77 84L118 103L115 145L74 126ZM365 663L403 643L420 682L382 703ZM383 90L397 113L383 136L369 113Z"/>
+  </g>
+</svg>

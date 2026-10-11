@@ -8,6 +8,13 @@ export type Config = {
   sessionTtlDays: number;
   trustProxy: number;
   production: boolean;
+  maxConnections: number;
+  maxRoomConnections: number;
+  receiptLimit: number;
+  retryRevisionWindow: number;
+  backupIntervalHours: number;
+  backupKeep: number;
+  backupCopyDir?: string;
 };
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const production = env.NODE_ENV === 'production';
@@ -45,5 +52,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionTtlDays: integer(env.SESSION_TTL_DAYS, 90, 3650),
     trustProxy,
     production,
+    maxConnections: integer(env.MAX_CONNECTIONS, 512, 10000),
+    maxRoomConnections: integer(env.MAX_ROOM_CONNECTIONS, 64, 1000),
+    receiptLimit: integer(env.ROOM_RECEIPT_LIMIT, 20_000, 1_000_000),
+    retryRevisionWindow: integer(env.RETRY_REVISION_WINDOW, 10_000, 1_000_000),
+    backupIntervalHours: integer(env.BACKUP_INTERVAL_HOURS, 24, 8760),
+    backupKeep: integer(env.BACKUP_KEEP, 14, 365),
+    ...(env.BACKUP_COPY_DIR ? { backupCopyDir: resolve(env.BACKUP_COPY_DIR) } : {}),
   };
 }

@@ -5,7 +5,7 @@ import { act, isHost, useApp } from '../app/store.js';
 import { Icon } from '../components/ui.js';
 import { DiceCanvas } from './DiceCanvas.js';
 import { visualDice } from './presentation.js';
-import { playCue, stopSounds } from '../components/feedback.js';
+import { playCue, playImpacts, stopSounds } from '../components/feedback.js';
 import '../styles/dice.css';
 
 export function rollTitle(roll: Roll) {
@@ -41,7 +41,8 @@ export function DiceRoll({
   const rollingPlayer = roll.playerId ? game.players[roll.playerId] : undefined;
   useEffect(() => {
     if (!audio || replay) return;
-    playCue('roll', reduced || skipped ? 0.15 : 2.25);
+    // A still result gets one knock. A thrown die sounds its own strikes below.
+    if (reduced || skipped) playCue('roll', 0.15);
     return stopSounds;
   }, [audio, replay, roll.id, round, reduced, skipped]);
   useEffect(() => {
@@ -102,6 +103,7 @@ export function DiceRoll({
             dice={dice}
             seed={`${roll.id}:${round}`}
             animate={!reduced && !skipped}
+            onImpacts={audio && !replay ? playImpacts : undefined}
             resultSpace={
               roll.winner
                 ? Math.min(415, 230 + Math.ceil(roll.candidates.length / 2) * 48)

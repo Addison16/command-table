@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 800" fill="none">
+
+  <defs>
+    <g id="canopy-edge">
+      <g fill="#8ab58e" fill-opacity=".16" stroke="#a1bd7d" stroke-opacity=".24" stroke-width="1.5">
+        <path d="M-25 2C90 4 185 65 145 139C59 162 20 68-25 2ZM44 132C145 89 244 129 225 200C147 246 97 175 44 132ZM-16 207C107 180 158 239 157 297C70 336 26 264-16 207ZM24 363C118 287 219 316 229 380C151 444 81 404 24 363Z"/>
+      </g>
+      <g stroke="#adc891" stroke-opacity=".26">
+        <path d="M-25-15C138 134 13 232 113 413" stroke-width="2"/>
+        <path d="M13 51L134 131M33 191L207 188M29 241L141 285M77 360L209 377"/>
+      </g>
+    </g>
+  </defs>
+  <!-- Canopy leaves stay in view at opposite corners, with clear space around the controls. -->
+  <use href="#canopy-edge" transform="translate(-9 -10) scale(.78)"/>
+  <use href="#canopy-edge" transform="translate(489 810) rotate(180) scale(.78)"/>
+  <g fill="#c4c790" fill-opacity=".28">
+    <circle cx="202" cy="56" r="1.8"/><circle cx="66" cy="365" r="1.3"/>
+    <circle cx="278" cy="744" r="1.8"/><circle cx="414" cy="435" r="1.3"/>
+    <circle cx="107" cy="651" r="1.2"/><circle cx="373" cy="149" r="1.2"/>
+  </g>
+</svg>

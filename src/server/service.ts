@@ -53,6 +53,8 @@ type RoomRow = {
   updated_at: number;
   expires_at: number;
   undo_room_revision: number | null;
+  retry_floor_revision: number;
+  receipt_count: number;
 };
 type MemberRow = {
   id: string;
@@ -64,18 +66,53 @@ type MemberRow = {
   seat_profile: string | null;
   status: Member['status'];
 };
+type RoomSnapshot = { room: RoomRow; game: Game; members: MemberRow[] };
 export class RoomService {
   onChange: (roomId: string) => void = () => {};
   presence: (memberId: string) => boolean = () => false;
+  private gameCache = new Map<string, { raw: string; game: Game; encoded?: string }>();
+  private statements = new Map<string, Database.Statement>();
   constructor(
     public db: Database.Database,
     public config: Config,
     public now: () => number = Date.now,
   ) {}
+  private prepare(sql: string) {
+    let statement = this.statements.get(sql);
+    if (!statement) {
+      statement = this.db.prepare(sql);
+      this.statements.set(sql, statement);
+    }
+    return statement;
+  }
+  private cachedGame(room: RoomRow) {
+    let cached = this.gameCache.get(room.id);
+    if (!cached || cached.raw !== room.game) {
+      cached = { raw: room.game, game: gameSchema.parse(JSON.parse(room.game)) };
+      this.gameCache.delete(room.id);
+      this.gameCache.set(room.id, cached);
+      if (this.gameCache.size > 128) this.gameCache.delete(this.gameCache.keys().next().value!);
+    }
+    return cached;
+  }
+  /** A broadcast reads shared data once, then checks each recipient separately. */
+  snapshot(roomId: string): RoomSnapshot {
+    const room = this.room(roomId);
+    return { room, game: this.cachedGame(room).game, members: this.members(roomId) };
+  }
+  serializeView(view: RoomView) {
+    const metadata = JSON.stringify({ ...view, game: undefined });
+    if (!view.game) return metadata;
+    const cached = this.gameCache.get(view.id);
+    const game =
+      cached?.game === view.game
+        ? (cached.encoded ??= JSON.stringify(cached.game))
+        : JSON.stringify(view.game);
+    return `${metadata.slice(0, -1)},"game":${game}}`;
+  }
   assertSession(sessionHash: string) {
-    const row = this.db
-      .prepare('SELECT expires_at, revoked FROM sessions WHERE hash = ?')
-      .get(sessionHash) as { expires_at: number; revoked: number } | undefined;
+    const row = this.prepare('SELECT expires_at, revoked FROM sessions WHERE hash = ?').get(sessionHash) as
+      { expires_at: number; revoked: number } | undefined;
     if (!row || row.revoked || row.expires_at <= this.now())
       throw new HttpError(401, 'Your guest session has expired or was revoked.');
   }
@@ -98,23 +135,22 @@ export class RoomService {
     })();
   }
   room(roomId: string) {
-    const row = this.db.prepare('SELECT * FROM rooms WHERE id = ?').get(roomId) as RoomRow | undefined;
+    const row = this.prepare('SELECT * FROM rooms WHERE id = ?').get(roomId) as RoomRow | undefined;
     if (!row) throw new HttpError(404, 'This room is unavailable.');
     if (row.expires_at <= this.now()) throw new HttpError(410, 'This room has expired.');
     return row;
   }
   member(roomId: string, sessionHash: string, includeRevoked = false) {
-    const m = this.db
-      .prepare('SELECT * FROM members WHERE room_id = ? AND session_hash = ?')
-      .get(roomId, sessionHash) as MemberRow | undefined;
+    const m = this.prepare('SELECT * FROM members WHERE room_id = ? AND session_hash = ?').get(
+      roomId,
+      sessionHash,
+    ) as MemberRow | undefined;
     if (!m || (!includeRevoked && m.status === 'revoked'))
       throw new HttpError(403, 'Your browser does not have access to this room.');
     return m;
   }
   members(roomId: string) {
-    return this.db
-      .prepare('SELECT * FROM members WHERE room_id = ? ORDER BY rowid')
-      .all(roomId) as MemberRow[];
+    return this.prepare('SELECT * FROM members WHERE room_id = ? ORDER BY rowid').all(roomId) as MemberRow[];
   }
   private inviteCode() {
     const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -134,12 +170,16 @@ export class RoomService {
       connected: this.presence(m.id),
     };
   }
-  view(roomId: string, sessionHash: string): RoomView {
+  view(roomId: string, sessionHash: string, snapshot?: RoomSnapshot): RoomView {
     this.assertSession(sessionHash);
-    const r = this.room(roomId),
-      me = this.member(roomId, sessionHash),
-      game = gameSchema.parse(JSON.parse(r.game)),
-      all = this.members(roomId).filter((m) => m.status !== 'revoked');
+    const data = snapshot ?? this.snapshot(roomId);
+    if (data.room.id !== roomId || data.room.expires_at <= this.now())
+      throw new HttpError(410, 'This room has expired.');
+    const r = data.room,
+      game = data.game,
+      all = data.members.filter((m) => m.status !== 'revoked'),
+      me = all.find((member) => member.session_hash === sessionHash);
+    if (!me) throw new HttpError(403, 'Your browser does not have access to this room.');
     const host = me.id === r.host_id,
       approved = me.status === 'approved';
     return {
@@ -498,6 +538,29 @@ export class RoomService {
       }
       const r = this.room(env.roomId);
       if (me.status === 'revoked') throw new HttpError(403, 'Your room membership has been revoked.');
+      // Relative actions may be based on an older confirmed view, never on a
+      // future revision. Otherwise compacting their receipt could leave a
+      // previously applied retry above the durable floor.
+      if (env.baseRevision > r.revision)
+        return {
+          operationId: env.operationId,
+          revision: r.revision,
+          gameId: (JSON.parse(r.game) as Game).id,
+          ok: false,
+          error:
+            'This action refers to a room revision that has not occurred and was not applied. Reload the room before making a new change.',
+        };
+      // Once an old receipt is compacted, its original base revision is behind
+      // this durable floor. An unknown retry can be refused, never reapplied.
+      if (env.baseRevision < r.retry_floor_revision)
+        return {
+          operationId: env.operationId,
+          revision: r.revision,
+          gameId: (JSON.parse(r.game) as Game).id,
+          ok: false,
+          error:
+            'This action is older than the room’s saved retry window and was not applied. Review the latest totals before making a new change.',
+        };
       let receipt: Receipt;
       try {
         // Nested transaction gives a savepoint: partial administrative writes cannot survive a rejection.
@@ -527,6 +590,14 @@ export class RoomService {
                   'DELETE FROM snapshots WHERE room_id=? AND id NOT IN (SELECT id FROM snapshots WHERE room_id=? ORDER BY rowid DESC LIMIT 10)',
                 )
                 .run(r.id, r.id);
+              // Envelopes for an earlier match are refused by game ID, so only
+              // the match ending now can still have a retry worth answering.
+              this.db.prepare('DELETE FROM receipts WHERE room_id=? AND game_id<>?').run(r.id, g.id);
+              r.receipt_count = (
+                this.prepare('SELECT count(*) AS count FROM receipts WHERE room_id=?').get(r.id) as {
+                  count: number;
+                }
+              ).count;
             }
             const ctx = {
               id: randomUUID(),
@@ -573,9 +644,43 @@ export class RoomService {
       }
       this.db
         .prepare(
-          'INSERT INTO receipts (room_id,actor_id,operation_id,game_id,payload_hash,result) VALUES (?,?,?,?,?,?)',
+          'INSERT INTO receipts (room_id,actor_id,operation_id,game_id,payload_hash,result,base_revision) VALUES (?,?,?,?,?,?,?)',
         )
-        .run(env.roomId, me.id, env.operationId, env.gameId, payloadHash, JSON.stringify(receipt));
+        .run(
+          env.roomId,
+          me.id,
+          env.operationId,
+          env.gameId,
+          payloadHash,
+          JSON.stringify(receipt),
+          env.baseRevision,
+        );
+      r.receipt_count++;
+      let floor = r.retry_floor_revision;
+      if (r.receipt_count > this.config.receiptLimit) {
+        // A room with many rejected actions may not advance naturally. Rotate
+        // the retry window atomically and retain the newest receipts so current
+        // uncertain acknowledgements still receive their original result.
+        const previousRevision = r.revision;
+        floor = ++r.revision;
+        if (r.undo_room_revision === previousRevision) r.undo_room_revision = r.revision;
+        const keep = Math.max(1, Math.floor(this.config.receiptLimit / 2));
+        this.prepare(
+          'DELETE FROM receipts WHERE room_id=? AND rowid NOT IN (SELECT rowid FROM receipts WHERE room_id=? ORDER BY rowid DESC LIMIT ?)',
+        ).run(r.id, r.id, keep);
+        r.receipt_count = keep;
+        changed = true;
+      } else if (r.revision % 128 === 0 && r.revision - floor > this.config.retryRevisionWindow) {
+        floor = r.revision - this.config.retryRevisionWindow;
+        const removed = this.prepare('DELETE FROM receipts WHERE room_id=? AND base_revision<?').run(
+          r.id,
+          floor,
+        );
+        r.receipt_count -= removed.changes;
+      }
+      this.prepare(
+        'UPDATE rooms SET receipt_count=?,retry_floor_revision=?,revision=?,undo_room_revision=? WHERE id=?',
+      ).run(r.receipt_count, floor, r.revision, r.undo_room_revision, r.id);
       return receipt;
     })();
     // Commit is complete before snapshots, acknowledgements, or broadcasts leave this process.
@@ -604,13 +709,32 @@ export class RoomService {
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM rooms WHERE expires_at <= ?').run(now);
       this.db.prepare('DELETE FROM sessions WHERE expires_at <= ? OR revoked = 1').run(now);
+      // A session that belongs to no room holds nothing to keep. Drop it once a
+      // day passes without renewal; that browser simply receives a new one.
+      this.db
+        .prepare(
+          'DELETE FROM sessions WHERE expires_at <= ? AND NOT EXISTS (SELECT 1 FROM members WHERE session_hash = sessions.hash)',
+        )
+        .run(now + (this.config.sessionTtlDays - 1) * DAY);
+      // An expired host would leave nobody able to manage the room. The
+      // longest-standing seated player inherits it.
+      const promote = this.db.prepare(
+        `UPDATE rooms SET host_id = (
+           SELECT id FROM members WHERE room_id = rooms.id AND status = 'approved'
+           ORDER BY seat_id IS NULL, rowid LIMIT 1)
+         WHERE id = ? AND NOT EXISTS (SELECT 1 FROM members WHERE id = rooms.host_id)
+           AND EXISTS (SELECT 1 FROM members WHERE room_id = rooms.id AND status = 'approved')`,
+      );
       // Membership changes need a new revision so delayed snapshots and stale
       // corrections cannot restore the old seat state. Cleanup is not activity
       // and must not extend room retention or change the gameplay snapshot.
       const update = this.db.prepare(
         'UPDATE rooms SET revision=revision+1,undo_room_revision=NULL WHERE id=?',
       );
-      for (const room of affected) update.run(room.id);
+      for (const room of affected) {
+        promote.run(room.id);
+        update.run(room.id);
+      }
     })();
     for (const r of affected) this.onChange(r.id);
   }

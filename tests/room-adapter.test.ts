@@ -70,7 +70,7 @@ async function liveRoom() {
     saveRoom: vi.fn(async () => {}),
   };
   let savePlayer: (
-    command: Extract<Command, { type: 'editPlayer' | 'groupLife' }>,
+    command: Extract<Command, { type: 'editPlayer' | 'groupLife' | 'set' | 'castSet' | 'damageSet' }>,
   ) => Promise<boolean> = async () => false;
   let disconnect = () => {};
   vi.doMock('../src/client/app/store.js', () => ({
@@ -260,9 +260,171 @@ describe('confirmed player saves in shared rooms', () => {
     ).toBe(true);
     expect(f.state.game).toEqual(f.room.game);
   });
+
+  it('refuses a malformed save before queuing or sending it', async () => {
+    const f = await liveRoom();
+    const invalid = {
+      ...f.command,
+      commanders: f.command.commanders.map((c) => ({ ...c, label: 'x'.repeat(101) })),
+    };
+    expect(await f.savePlayer(invalid)).toBe(false);
+    expect(f.socket.send).not.toHaveBeenCalled();
+    expect(f.repository.savePending).not.toHaveBeenCalled();
+    expect(f.state.error).toMatch(/check your values/);
+    expect(f.state.pending).toBe(0);
+  });
+
+  it('reconciles an unconfirmed save when the server answers with an error instead of a receipt', async () => {
+    const f = await liveRoom();
+    const saving = f.savePlayer(f.command);
+    const env = await f.submitted();
+    f.socket.emit({ type: 'error', error: 'Invalid socket command.' });
+    expect(await saving).toBe(false);
+    await vi.waitFor(() =>
+      expect(
+        f.fetch.mock.calls.some(
+          ([path, init]) =>
+            path.endsWith('/command') && JSON.parse(String(init?.body)).operationId === env.operationId,
+        ),
+      ).toBe(true),
+    );
+    await vi.waitFor(() => expect(f.state.pending).toBe(0));
+    expect(await f.repository.pending()).toEqual([]);
+  });
+});
+
+describe('saved actions the server will not record', () => {
+  it.each([400, 409])('sets aside an action refused with %i and still reopens the room', async (status) => {
+    const f = await liveRoom();
+    const refused: Envelope = {
+      protocolVersion: 1,
+      roomId: f.room.id,
+      gameId: f.room.gameId,
+      operationId: newId(),
+      baseRevision: f.room.revision,
+      command: { type: 'adjust', playerId: f.room.me.seatId!, field: 'life', delta: -1 },
+    };
+    await f.repository.savePending(f.room.id, [refused]);
+    f.fetch.mockClear();
+    f.fetch
+      .mockImplementationOnce(async () => Response.json({ csrf: 'test', serverTime: Date.now() }))
+      .mockImplementationOnce(async () => Response.json({ error: 'Invalid request.' }, { status }));
+    const { connectRoom } = await import('../src/client/adapters/room.js');
+    await connectRoom(f.room.id);
+    expect(f.fetch.mock.calls.map(([path]) => path)).toEqual([
+      '/api/session',
+      `/api/rooms/${f.room.id}/command`,
+      `/api/rooms/${f.room.id}`,
+    ]);
+    expect(await f.repository.pending()).toEqual([]);
+    expect(f.state.pending).toBe(0);
+    expect(f.state.unresolved.at(-1)).toMatch(/set aside. Invalid request/);
+    expect(f.state.error).not.toMatch(/Connection unavailable/);
+  });
+
+  it('keeps retrying an action when the server is only temporarily unable to answer', async () => {
+    const f = await liveRoom();
+    const waiting: Envelope = {
+      protocolVersion: 1,
+      roomId: f.room.id,
+      gameId: f.room.gameId,
+      operationId: newId(),
+      baseRevision: f.room.revision,
+      command: { type: 'adjust', playerId: f.room.me.seatId!, field: 'life', delta: -1 },
+    };
+    await f.repository.savePending(f.room.id, [waiting]);
+    f.fetch
+      .mockImplementationOnce(async () => Response.json({ csrf: 'test', serverTime: Date.now() }))
+      .mockImplementationOnce(async () => Response.json({ error: 'Please retry.' }, { status: 500 }));
+    const { connectRoom } = await import('../src/client/adapters/room.js');
+    await connectRoom(f.room.id);
+    expect(await f.repository.pending()).toEqual([waiting]);
+    expect(f.state.pending).toBe(1);
+    expect(f.state.error).toMatch(/Connection unavailable/);
+  });
 });
 
 describe('room reconnection cancellation', () => {
+  it('aborts a stalled connection when replacing it, and gives its replacement a deadline', async () => {
+    const f = await liveRoom();
+    const signals: AbortSignal[] = [];
+    f.fetch.mockImplementation(
+      (_path, init) =>
+        new Promise((_resolve, reject) => {
+          const signal = init!.signal!;
+          signals.push(signal);
+          signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+            once: true,
+          });
+        }),
+    );
+    const { connectRoom } = await import('../src/client/adapters/room.js');
+    const old = connectRoom(f.room.id);
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    const replacement = connectRoom(f.room.id);
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+    await old;
+    await vi.advanceTimersByTimeAsync(10_000);
+    await replacement;
+    expect(signals[1].aborted).toBe(true);
+    expect(f.state.error).toMatch(/timed out/);
+    f.disconnect();
+  });
+
+  it('cancels a stalled fetch when leaving the room and keeps all saved operations', async () => {
+    const f = await liveRoom();
+    let signal!: AbortSignal;
+    f.fetch.mockImplementation(
+      (_path, init) =>
+        new Promise((_resolve, reject) => {
+          signal = init!.signal!;
+          signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+            once: true,
+          });
+        }),
+    );
+    const { connectRoom } = await import('../src/client/adapters/room.js');
+    const waiting = connectRoom(f.room.id);
+    await vi.waitFor(() => expect(signal).toBeDefined());
+    f.disconnect();
+    await waiting;
+    expect(signal.aborted).toBe(true);
+    expect(f.state.error).toBe('');
+  });
+
+  it.each(['set', 'castSet', 'damageSet'] as const)(
+    'does not confirm an exact %s correction on rejection',
+    async (type) => {
+      const f = await liveRoom();
+      const commander = Object.values(f.room.game!.commanders).find((c) => c.ownerId === f.room.me.seatId)!;
+      const opponent = Object.values(f.room.game!.commanders).find((c) => c.ownerId !== f.room.me.seatId)!;
+      const command =
+        type === 'set'
+          ? { type, playerId: f.room.me.seatId!, field: 'life', value: 17 }
+          : type === 'castSet'
+            ? { type, commanderId: commander.id, value: 3 }
+            : { type, playerId: f.room.me.seatId!, commanderId: opponent.id, value: 9 };
+      const saving = f.savePlayer(command);
+      const envelope = await f.submitted();
+      f.socket.emit({
+        type: 'ack',
+        receipt: {
+          operationId: envelope.operationId,
+          gameId: f.room.gameId,
+          revision: f.room.revision,
+          ok: false,
+          error: 'Review the latest totals.',
+        },
+        view: f.room,
+      });
+      expect(await saving).toBe(false);
+      expect(f.state.confirmed).toEqual(f.room.game);
+      expect(f.state.error).toMatch(/latest totals/);
+    },
+  );
+
   it('does not reopen a room or submit its saved actions after switching to local play during storage loading', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('document', { hidden: false, addEventListener: vi.fn() });
