@@ -193,6 +193,26 @@ describe('scheme deck', () => {
     expect(undone.archenemy!.schemes).toBe(16);
     expect(undone.archenemy!.revealed).toBe(seen.at(-1));
   });
+  it('returns an abandoned ongoing scheme to the bottom of the deck', () => {
+    let g = action(archenemyGame(), { type: 'shuffleSchemes', sets: ['arc'] });
+    const ongoing = schemeCards.find((card) => card.set === 'arc' && card.ongoing)!;
+    const others = g.archenemy!.deck!.filter((id) => id !== ongoing.id);
+    // Arrange [ongoing, B, C, ...] and reveal the ongoing scheme, then B.
+    g.archenemy!.deck = [ongoing.id, ...others];
+    g = action(g, { type: 'revealScheme' });
+    g = action(g, { type: 'revealScheme' });
+    expect(g.archenemy!.ongoing).toEqual([ongoing.name]);
+    g = action(g, { type: 'abandonScheme', index: 0 });
+    const order: string[] = [];
+    for (let i = 0; i < others.length + 1; i++) {
+      g = action(g, { type: 'revealScheme' });
+      order.push(g.archenemy!.revealed!);
+      if (schemeCard(g.archenemy!.revealed)!.ongoing) g = action(g, { type: 'abandonScheme', index: 0 });
+    }
+    // C … last, then B, then the abandoned scheme.
+    expect(order.slice(-2)).toEqual([others[0], ongoing.id]);
+    expect(order[0]).toBe(others[1]);
+  });
   it('reshuffles the same sets for a rematch', () => {
     let g = archenemyGame();
     g = action(g, { type: 'shuffleSchemes', sets: ['dsc'] });

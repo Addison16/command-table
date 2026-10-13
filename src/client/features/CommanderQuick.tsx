@@ -11,13 +11,18 @@ import '../styles/commander-quick.css';
 const storageKey = 'mtg-util:damage-sources';
 const damageSources = new Map<string, string>();
 const sourceKey = (gameId: string, playerId: string) => `${gameId}:${playerId}`;
-/** Re-read on use so other tabs' choices are picked up too. */
+/** Re-read on use for choices from earlier tabs; this tab's newer choices always win. */
 function loadSources() {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
     if (Array.isArray(saved))
       for (const entry of saved.slice(-64))
-        if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'string')
+        if (
+          Array.isArray(entry) &&
+          typeof entry[0] === 'string' &&
+          typeof entry[1] === 'string' &&
+          !damageSources.has(entry[0])
+        )
           damageSources.set(entry[0], entry[1]);
   } catch {
     // Storage denial leaves only this tab's in-memory selections.

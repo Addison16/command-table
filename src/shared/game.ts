@@ -10,7 +10,7 @@ import {
   type Roll,
   type Setup,
 } from './schema.js';
-import { nextSchemeIndex, schemeCard, shuffleSchemeDeck } from './schemes.js';
+import { nextSchemeIndex, schemeCard, schemeCards, shuffleSchemeDeck } from './schemes.js';
 
 export type Context = {
   id: string;
@@ -362,6 +362,17 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       if (!g.archenemy) throw new Error('Schemes are used only in Archenemy games');
       const [name] = g.archenemy.ongoing.splice(c.index, 1);
       if (name === undefined) throw new Error('That scheme is no longer ongoing');
+      // An abandoned card from the deck goes to the bottom: just behind the current top.
+      const { deck } = g.archenemy;
+      const card = schemeCards.find((entry) => entry.name === name);
+      const from = card && deck ? deck.indexOf(card.id) : -1;
+      if (deck && from >= 0) {
+        let position = g.archenemy.position ?? 0;
+        deck.splice(from, 1);
+        if (from < position) position--;
+        deck.splice(position, 0, card!.id);
+        g.archenemy.position = (position + 1) % deck.length;
+      }
       summary = `${g.players[g.archenemy.playerId].name} abandoned ${name}`;
       break;
     }
