@@ -6,12 +6,14 @@ import {
   createGame,
   defaultSetup,
   isTeamTurn,
+  makeSchemeDeck,
   opponentsOf,
   reduceGame,
   setupFromGame,
   turnOrder,
 } from '../src/shared/game.js';
-import { newId } from '../src/shared/random.js';
+import { newId, randomInt } from '../src/shared/random.js';
+import { schemeCard, schemeCards, shuffleSchemeDeck } from '../src/shared/schemes.js';
 import { gameSchema, setupSchema, type AdminCommand, type Command, type Game } from '../src/shared/schema.js';
 import { canUndoRoomAction } from '../src/shared/permissions.js';
 import { playerStatuses } from '../src/client/features/playerStatuses.js';
@@ -21,6 +23,7 @@ import { hash, RoomService } from '../src/server/service.js';
 import { readConfig } from '../src/server/config.js';
 
 const actorId = newId();
+const firstRng = () => 0;
 function action(g: Game, c: Command, now = 2000) {
   return reduceGame(g, c, {
     id: newId(),
@@ -29,6 +32,7 @@ function action(g: Game, c: Command, now = 2000) {
     actor: 'Alex',
     now,
     newGameId: c.type === 'rematch' ? newId() : undefined,
+    schemeDeck: makeSchemeDeck(g, c, firstRng),
   });
 }
 const archenemyGame = (count = 4, seat = 0) => createGame(archenemySetup(count, seat), newId, 1000);
@@ -147,6 +151,70 @@ describe('archenemy play', () => {
   });
 });
 
+describe('scheme deck', () => {
+  it('includes every printed scheme exactly once', () => {
+    expect(schemeCards).toHaveLength(102);
+    expect(new Set(schemeCards.map((card) => card.name)).size).toBe(102);
+    expect(schemeCards.filter((card) => card.set === 'arc')).toHaveLength(46);
+    expect(schemeCards.filter((card) => card.set === 'e01')).toHaveLength(16);
+    expect(schemeCards.filter((card) => card.set === 'dsc')).toHaveLength(40);
+    expect(schemeCard('your-inescapable-doom')).toMatchObject({ ongoing: true, set: 'arc' });
+    expect(schemeCards.every((card) => card.text.length > 10)).toBe(true);
+  });
+  it('shuffles the chosen sets fairly', () => {
+    const deck = shuffleSchemeDeck(['e01', 'dsc'], randomInt);
+    expect(deck).toHaveLength(56);
+    expect(new Set(deck).size).toBe(56);
+    expect(deck.every((id) => schemeCard(id)?.set !== 'arc')).toBe(true);
+  });
+  it('reveals the top scheme, cycles through the deck and skips ongoing schemes', () => {
+    let g = archenemyGame();
+    expect(() => action(g, { type: 'revealScheme' })).toThrow(/Shuffle/);
+    g = action(g, { type: 'shuffleSchemes', sets: ['e01'] });
+    const deck = g.archenemy!.deck!;
+    expect(deck).toHaveLength(16);
+    expect(g.archenemy).toMatchObject({ position: 0, revealed: null, sets: ['e01'] });
+    const seen: string[] = [];
+    for (let turn = 0; turn < 16; turn++) {
+      g = action(g, { type: 'revealScheme' });
+      seen.push(g.archenemy!.revealed!);
+    }
+    // Each card appears once per pass; ongoing schemes stay out until abandoned.
+    expect(new Set(seen).size).toBe(16);
+    expect(seen).toEqual(deck);
+    const ongoing = deck.map((id) => schemeCard(id)!).filter((card) => card.ongoing);
+    expect(g.archenemy!.ongoing).toEqual(ongoing.map((card) => card.name));
+    expect(g.archenemy!.schemes).toBe(16);
+    g = action(g, { type: 'revealScheme' });
+    const next = schemeCard(g.archenemy!.revealed!)!;
+    expect(next.ongoing).toBe(false);
+    expect(g.archenemy!.revealed).toBe(deck.find((id) => !schemeCard(id)!.ongoing));
+    const undone = action(g, { type: 'undo' });
+    expect(undone.archenemy!.schemes).toBe(16);
+    expect(undone.archenemy!.revealed).toBe(seen.at(-1));
+  });
+  it('reshuffles the same sets for a rematch', () => {
+    let g = archenemyGame();
+    g = action(g, { type: 'shuffleSchemes', sets: ['dsc'] });
+    g = action(g, { type: 'revealScheme' });
+    const next = action(g, { type: 'rematch' });
+    expect(next.archenemy).toMatchObject({
+      schemes: 0,
+      ongoing: [],
+      position: 0,
+      revealed: null,
+      sets: ['dsc'],
+    });
+    expect(next.archenemy!.deck).toHaveLength(40);
+  });
+  it('refuses unknown scheme cards in saved games', () => {
+    const g = action(archenemyGame(), { type: 'shuffleSchemes', sets: ['arc'] });
+    const broken = structuredClone(g);
+    broken.archenemy!.deck![0] = 'not-a-scheme';
+    expect(gameSchema.safeParse(broken).success).toBe(false);
+  });
+});
+
 describe('archenemy rooms', () => {
   const close: (() => void)[] = [];
   afterEach(() => {
@@ -200,5 +268,13 @@ describe('archenemy rooms', () => {
     expect(run(host.hash, { type: 'scheme', ongoing: false }).receipt.ok).toBe(true);
     expect(run(hero.hash, { type: 'abandonScheme', index: 0 }).receipt.ok).toBe(false);
     expect(svc.view(room.id, host.hash).game!.archenemy).toMatchObject({ schemes: 1, ongoing: [] });
+    expect(run(hero.hash, { type: 'shuffleSchemes', sets: ['arc'] }).receipt.ok).toBe(false);
+    expect(run(villain.hash, { type: 'shuffleSchemes', sets: ['arc'] }).receipt.ok).toBe(true);
+    expect(run(hero.hash, { type: 'revealScheme' }).receipt.ok).toBe(false);
+    expect(run(villain.hash, { type: 'revealScheme' }).receipt.ok).toBe(true);
+    const shared = svc.view(room.id, hero.hash).game!.archenemy!;
+    expect(shared.deck).toHaveLength(46);
+    expect(shared.revealed).toBe(shared.deck![0]);
+    expect(shared.schemes).toBe(2);
   });
 });

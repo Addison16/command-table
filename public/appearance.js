@@ -19,9 +19,18 @@
   document.documentElement.style.colorScheme = theme;
   // Validate the optional cache before using it as a selector. IndexedDB is
   // authoritative once the app loads, including when this cache is unreadable.
-  const colorTheme = ['classic', 'arcane', 'forest', 'ocean', 'ember', 'monochrome'].includes(
-    style?.colorTheme,
-  )
+  const colorTheme = [
+    'classic',
+    'arcane',
+    'forest',
+    'ocean',
+    'ember',
+    'monochrome',
+    'dawn',
+    'crimson',
+    'shadow',
+    'phyrexian',
+  ].includes(style?.colorTheme)
     ? style.colorTheme
     : 'classic';
   document.documentElement.dataset.colorTheme = colorTheme;
@@ -57,6 +66,10 @@
     ocean: ['#edf5f8', '#07131c'],
     ember: ['#fbf1e9', '#1b1010'],
     monochrome: ['#f2f3f5', '#101214'],
+    dawn: ['#fbf7ea', '#15120b'],
+    crimson: ['#fbf0f0', '#16070a'],
+    shadow: ['#f3f1ee', '#0b0a0f'],
+    phyrexian: ['#eef2ee', '#060a09'],
   };
   document
     .querySelector('meta[name="theme-color"]')

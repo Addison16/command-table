@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { commanderCardSchema } from './cards.js';
+import { isSchemeId, schemeCards, schemeSetIds } from './schemes.js';
 
 export const PROTOCOL = 1;
 export const LIMIT = 999_999;
@@ -31,6 +32,7 @@ export const settingsSchema = z
   })
   .strict();
 export const schemeNameSchema = z.string().trim().min(1).max(60);
+export const schemeIdSchema = z.string().max(60).refine(isSchemeId, 'Unknown scheme');
 export const setupSchema = z
   .strictObject({
     settings: settingsSchema,
@@ -158,6 +160,12 @@ export const gameSchema = z
         playerId: idSchema,
         schemes: int,
         ongoing: z.array(schemeNameSchema).max(12),
+        /** The shuffled scheme deck, which cycles from `position`. Absent until it is first shuffled. */
+        deck: z.array(schemeIdSchema).max(schemeCards.length).optional(),
+        position: int.optional(),
+        /** The most recently revealed scheme from the deck. */
+        revealed: schemeIdSchema.nullable().optional(),
+        sets: z.array(z.enum(schemeSetIds)).min(1).max(schemeSetIds.length).optional(),
       })
       .optional(),
   })
@@ -271,6 +279,11 @@ export const commandSchema = z.discriminatedUnion('type', [
     name: schemeNameSchema.optional(),
     ongoing: z.boolean(),
   }),
+  z.strictObject({
+    type: z.literal('shuffleSchemes'),
+    sets: z.array(z.enum(schemeSetIds)).min(1).max(schemeSetIds.length),
+  }),
+  z.strictObject({ type: z.literal('revealScheme') }),
   z.strictObject({ type: z.literal('abandonScheme'), index: z.number().int().min(0).max(11) }),
   z.strictObject({ type: z.literal('timer'), action: z.enum(['pause', 'resume']) }),
   z.strictObject({

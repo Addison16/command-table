@@ -5,6 +5,7 @@ import {
   defaultSetup,
   setupFromGame,
   makeRoll,
+  makeSchemeDeck,
   reduceGame,
 } from '../../shared/game.js';
 import { newId, randomInt } from '../../shared/random.js';
@@ -190,6 +191,7 @@ export function act(command: Command | AdminCommand, groupId?: string): Promise<
     groupId,
     newGameId: c.type === 'rematch' ? newId() : undefined,
     roll,
+    schemeDeck: makeSchemeDeck(state.game, c, randomInt),
   };
   try {
     reduceGame(state.game, c, context);

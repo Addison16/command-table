@@ -5,6 +5,7 @@ import {
   commandSeat,
   isRelative,
   makeRoll,
+  makeSchemeDeck,
   reduceGame,
   recoveryDeadline,
   GAME_RECOVERY_MS,
@@ -501,6 +502,8 @@ export class RoomService {
         'reopen',
         'rematch',
         'scheme',
+        'revealScheme',
+        'shuffleSchemes',
         'abandonScheme',
       ].includes(c.type)
     )
@@ -512,9 +515,16 @@ export class RoomService {
     if (
       seat &&
       (numeric ||
-        ['customize', 'editPlayer', 'commanderName', 'eliminate', 'scheme', 'abandonScheme'].includes(
-          c.type,
-        )) &&
+        [
+          'customize',
+          'editPlayer',
+          'commanderName',
+          'eliminate',
+          'scheme',
+          'revealScheme',
+          'shuffleSchemes',
+          'abandonScheme',
+        ].includes(c.type)) &&
       seat === me.seat_id
     )
       return;
@@ -607,6 +617,7 @@ export class RoomService {
               actor: me.name,
               groupId: env.groupId,
               newGameId: c.type === 'rematch' ? randomUUID() : undefined,
+              schemeDeck: makeSchemeDeck(g, c, randomInt),
               roll:
                 c.type === 'roll'
                   ? makeRoll(g, c, { id: randomUUID(), now: this.now(), actor: me.name }, randomInt)

@@ -8,6 +8,50 @@ import {
   tableLooks,
 } from './appearancePresets.js';
 
+/** One-tap table looks for the home screen; the full controls stay in Settings. */
+export function QuickThemes({ onMore }: { onMore: () => void }) {
+  const profile = useApp((s) => s.profile);
+  return (
+    <section className="quick-themes" aria-labelledby="quick-themes-title">
+      <div className="quick-themes-heading">
+        <div className="eyebrow" id="quick-themes-title">
+          SET THE MOOD
+        </div>
+        <button className="text-button" onClick={onMore}>
+          More styles
+        </button>
+      </div>
+      <div className="quick-theme-list" role="group" aria-label="Table themes">
+        {tableLooks.map(({ name, description, ...look }) => (
+          <button
+            key={name}
+            className="quick-theme"
+            aria-label={`${name} theme`}
+            title={description}
+            aria-pressed={
+              profile.colorTheme === look.colorTheme &&
+              profile.accentColor === look.accentColor &&
+              profile.tableFinish === look.tableFinish
+            }
+            onClick={() => void updateProfile(look)}
+          >
+            <span
+              className="finish-preview quick-theme-swatch"
+              data-table-finish={look.tableFinish}
+              data-color-theme={look.colorTheme}
+              data-accent-color={look.accentColor}
+              aria-hidden="true"
+            >
+              <i />
+            </span>
+            <span>{name}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function AppearanceOptions() {
   const profile = useApp((s) => s.profile);
   return (

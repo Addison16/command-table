@@ -28,6 +28,8 @@ Beginning with v0.1.2, the application, documentation, and original project asse
 
 Scryfall provides card metadata and its dedicated `art_crop` images. The app searches through a bounded, rate-limited server cache, uses only trusted Scryfall card/image URLs, and retains selected public metadata in saved games. Player details and the selection preview identify the artist, link to Scryfall, and show the Wizards of the Coast copyright. Two commanders can share a panel. Images use their natural colors and aspect ratio; only the art crop is displayed behind the counter controls.
 
+Archenemy scheme names and rules text in `src/shared/schemeCards.ts` were generated from Scryfall's oracle data (`type:scheme`) and belong to Wizards of the Coast. The scheme deck shows each card's Scryfall `art_crop` when online and keeps the text readable offline.
+
 The production service worker keeps a separate, bounded cache for viewed public art images; private game APIs are never cached. New searches and uncached images require internet access. Missing art leaves the normal counter usable. See [Scryfall API usage and attribution](https://scryfall.com/docs/api), [image formats](https://scryfall.com/docs/api/images), and [rate limits](https://scryfall.com/docs/api/rate-limits).
 
 Command Table is unofficial Fan Content permitted under the [Fan Content Policy](https://company.wizards.com/fancontentpolicy). Not approved or endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. © Wizards of the Coast. This notice also appears in display/browser settings, with per-card credits in the app.

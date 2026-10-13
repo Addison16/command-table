@@ -85,7 +85,7 @@
   }
   .scheme-summary {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
     gap: 10px;
     margin-bottom: 12px;
   }
@@ -132,7 +132,175 @@
     border-left: 2px solid var(--danger);
   }
   .ongoing-schemes span {
+    display: grid;
+    gap: 3px;
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  .ongoing-schemes small {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .scheme-reveal {
+    min-height: 54px;
+    margin-bottom: 4px;
+    border: 1px solid var(--danger-line);
+    /* Fixed villain reds keep white text readable in every theme. */
+    background: linear-gradient(135deg, #b3243a, #6d0f1f);
+    color: #fff;
+    box-shadow: 0 6px 22px rgb(179 36 58 / 30%);
+  }
+  .scheme-reveal:not(:disabled):hover {
+    background: linear-gradient(135deg, #c8344a, #821426);
+  }
+  /* A revealed scheme reads like the oversized card it is. */
+  .scheme-face {
+    overflow: hidden;
+    margin: 14px 0 6px;
+    border: 1px solid var(--danger-line);
+    border-radius: 16px;
+    background: linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--danger) 12%, var(--surface)),
+      var(--surface)
+    );
+    box-shadow: 0 12px 30px rgb(0 0 0 / 28%);
+  }
+  .scheme-face.ongoing {
+    border-color: var(--gold);
+  }
+  .scheme-face.fresh {
+    animation: scheme-reveal 650ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+  }
+  .scheme-image {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: color-mix(in srgb, var(--danger) 8%, var(--surface-inset));
+  }
+  .scheme-face-text {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px 14px;
+  }
+  .scheme-face-text h3 {
+    margin: 0;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+  .scheme-face-text p {
+    margin: 0;
+    color: var(--soft-text);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-line;
+  }
+  .scheme-type {
+    color: var(--danger);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+  }
+  .scheme-face.ongoing .scheme-type {
+    color: var(--accent-text);
+  }
+  .scheme-back {
+    display: grid;
+    place-items: center;
+    gap: 8px;
+    aspect-ratio: 16 / 9;
+    margin: 14px 0 6px;
+    border: 1px solid var(--danger-line);
+    border-radius: 16px;
+    background:
+      radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--danger) 30%, transparent), transparent 60%),
+      repeating-linear-gradient(
+        45deg,
+        transparent 0 10px,
+        color-mix(in srgb, var(--danger) 6%, transparent) 10px 11px
+      ),
+      var(--surface-inset);
+    color: var(--danger);
+    font-size: 13px;
+    align-content: center;
+  }
+  .scheme-builder {
+    display: grid;
+    gap: 12px;
+    margin-top: 10px;
+  }
+  .scheme-sets {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .scheme-sets legend {
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .scheme-set {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .scheme-set:has(input:checked) {
+    border-color: var(--danger-line);
+    background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  }
+  .scheme-set input {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--danger);
+  }
+  .scheme-set span {
+    display: grid;
+  }
+  .scheme-set small {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .scheme-more {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .scheme-more summary {
+    min-height: 32px;
+    cursor: pointer;
+    color: var(--soft-text);
+    line-height: 32px;
+  }
+}
+
+@keyframes scheme-reveal {
+  from {
+    opacity: 0;
+    transform: perspective(900px) rotateX(55deg) translateY(-24px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scheme-face.fresh {
+    animation: none;
+  }
+}
+:root:not([data-effects='full']) .scheme-face.fresh {
+  animation: none;
 }

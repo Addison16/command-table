@@ -7,20 +7,33 @@ import { CommanderCasts } from './PlayerDetails.js';
 import '../styles/commander-quick.css';
 
 // A convenience for this device, never part of the shared game's rules or data.
+// One bounded entry survives closing the tab without growing browser storage.
+const storageKey = 'mtg-util:damage-sources';
 const damageSources = new Map<string, string>();
-const sourceKey = (gameId: string, playerId: string) => `mtg-util:damage-source:${gameId}:${playerId}`;
-function rememberedSource(key: string) {
+const sourceKey = (gameId: string, playerId: string) => `${gameId}:${playerId}`;
+/** Re-read on use so other tabs' choices are picked up too. */
+function loadSources() {
   try {
-    return damageSources.get(key) ?? sessionStorage.getItem(key) ?? '';
+    const saved: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
+    if (Array.isArray(saved))
+      for (const entry of saved.slice(-64))
+        if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'string')
+          damageSources.set(entry[0], entry[1]);
   } catch {
-    return damageSources.get(key) ?? '';
+    // Storage denial leaves only this tab's in-memory selections.
   }
 }
+function rememberedSource(key: string) {
+  loadSources();
+  return damageSources.get(key) ?? '';
+}
 function rememberSource(key: string, commanderId: string) {
+  loadSources();
+  damageSources.delete(key);
   damageSources.set(key, commanderId);
-  if (damageSources.size > 64) damageSources.delete(damageSources.keys().next().value!);
+  while (damageSources.size > 64) damageSources.delete(damageSources.keys().next().value!);
   try {
-    sessionStorage.setItem(key, commanderId);
+    localStorage.setItem(storageKey, JSON.stringify([...damageSources]));
   } catch {
     // The in-memory selection still works when browser storage is unavailable.
   }

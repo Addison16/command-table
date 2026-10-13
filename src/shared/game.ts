@@ -10,6 +10,7 @@ import {
   type Roll,
   type Setup,
 } from './schema.js';
+import { nextSchemeIndex, schemeCard, shuffleSchemeDeck } from './schemes.js';
 
 export type Context = {
   id: string;
@@ -20,6 +21,8 @@ export type Context = {
   groupId?: string;
   roll?: Roll;
   newGameId?: string;
+  /** A freshly shuffled scheme deck, drawn by whoever applies the command (like a roll). */
+  schemeDeck?: string[];
 };
 export const GAME_RECOVERY_MS = 24 * 60 * 60 * 1000;
 export function recoveryDeadline(game: Game): number | null {
@@ -328,6 +331,33 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       summary = `${villain.name} set ${name} in motion${c.ongoing ? ' (ongoing)' : ''}`;
       break;
     }
+    case 'shuffleSchemes': {
+      if (!g.archenemy) throw new Error('Schemes are used only in Archenemy games');
+      if (!ctx.schemeDeck?.length) throw new Error('Missing shuffled scheme deck');
+      g.archenemy.deck = ctx.schemeDeck;
+      g.archenemy.position = 0;
+      g.archenemy.revealed = null;
+      g.archenemy.sets = c.sets;
+      summary = `${g.players[g.archenemy.playerId].name} shuffled a ${ctx.schemeDeck.length}-card scheme deck`;
+      break;
+    }
+    case 'revealScheme': {
+      if (!g.archenemy) throw new Error('Schemes are used only in Archenemy games');
+      const villain = g.players[g.archenemy.playerId];
+      if (villain.eliminated) throw new Error('Restore the archenemy before setting schemes in motion');
+      if (!g.archenemy.deck?.length) throw new Error('Shuffle the scheme deck first');
+      const index = nextSchemeIndex(g.archenemy);
+      const card = index === null ? undefined : schemeCard(g.archenemy.deck[index]);
+      if (index === null || !card) throw new Error('Every scheme in the deck is ongoing. Abandon one first.');
+      if (card.ongoing && g.archenemy.ongoing.length >= 12)
+        throw new Error('Abandon an ongoing scheme before adding another');
+      g.archenemy.schemes = bounded(g.archenemy.schemes + 1);
+      g.archenemy.position = (index + 1) % g.archenemy.deck.length;
+      g.archenemy.revealed = card.id;
+      if (card.ongoing) g.archenemy.ongoing.push(card.name);
+      summary = `${villain.name} set ${card.name} in motion${card.ongoing ? ' (ongoing)' : ''}`;
+      break;
+    }
     case 'abandonScheme': {
       if (!g.archenemy) throw new Error('Schemes are used only in Archenemy games');
       const [name] = g.archenemy.ongoing.splice(c.index, 1);
@@ -392,7 +422,14 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       g.damageReceived = {};
       g.markers = { monarch: null, initiative: null };
       g.turn = g.archenemy ? { playerId: g.archenemy.playerId, number: 1 } : { playerId: null, number: 0 };
-      if (g.archenemy) g.archenemy = { playerId: g.archenemy.playerId, schemes: 0, ongoing: [] };
+      if (g.archenemy) {
+        const { playerId, sets } = g.archenemy;
+        // A rematch reshuffles the same sets when the caller supplied a fresh deck.
+        g.archenemy =
+          sets && ctx.schemeDeck?.length
+            ? { playerId, schemes: 0, ongoing: [], deck: ctx.schemeDeck, position: 0, revealed: null, sets }
+            : { playerId, schemes: 0, ongoing: [] };
+      }
       g.timer = { startedAt: ctx.now, pausedAt: null, pausedMs: 0 };
       g.rolls = [];
       g.history = [];
@@ -489,6 +526,12 @@ export function warnings(g: Game, playerId: string): string[] {
 export function elapsed(g: Game, now: number) {
   return Math.max(0, (g.timer.pausedAt ?? now) - g.timer.startedAt - g.timer.pausedMs);
 }
+/** The shuffled deck a command needs, if any. Like rolls, the applier draws it once and records it. */
+export function makeSchemeDeck(g: Game, c: Command, rng: (max: number) => number): string[] | undefined {
+  if (c.type === 'shuffleSchemes') return shuffleSchemeDeck(c.sets, rng);
+  if (c.type === 'rematch' && g.archenemy?.sets) return shuffleSchemeDeck(g.archenemy.sets, rng);
+  return undefined;
+}
 export function makeRoll(
   g: Game,
   c: Extract<Command, { type: 'roll' }>,
@@ -533,10 +576,11 @@ export function makeRoll(
   return roll;
 }
 export function isRelative(c: Command) {
-  return ['adjust', 'damage', 'cast', 'roll', 'scheme'].includes(c.type);
+  return ['adjust', 'damage', 'cast', 'roll', 'scheme', 'revealScheme'].includes(c.type);
 }
 export function commandSeat(g: Game, c: Command): string | undefined {
-  if (c.type === 'scheme' || c.type === 'abandonScheme') return g.archenemy?.playerId;
+  if (['scheme', 'revealScheme', 'shuffleSchemes', 'abandonScheme'].includes(c.type))
+    return g.archenemy?.playerId;
   return 'playerId' in c && c.playerId
     ? c.playerId
     : 'commanderId' in c
