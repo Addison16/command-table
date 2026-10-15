@@ -3,6 +3,7 @@ import {
   gameSchema,
   setupSchema,
   LIMIT,
+  MAX_ONGOING_SCHEMES,
   palettes,
   type Change,
   type Command,
@@ -323,7 +324,7 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       if (!g.archenemy) throw new Error('Schemes are used only in Archenemy games');
       const villain = g.players[g.archenemy.playerId];
       if (villain.eliminated) throw new Error('Restore the archenemy before setting schemes in motion');
-      if (c.ongoing && g.archenemy.ongoing.length >= 12)
+      if (c.ongoing && g.archenemy.ongoing.length >= MAX_ONGOING_SCHEMES)
         throw new Error('Abandon an ongoing scheme before adding another');
       g.archenemy.schemes = bounded(g.archenemy.schemes + 1);
       const name = c.name ?? `Scheme ${g.archenemy.schemes}`;
@@ -349,7 +350,7 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       const index = nextSchemeIndex(g.archenemy);
       const card = index === null ? undefined : schemeCard(g.archenemy.deck[index]);
       if (index === null || !card) throw new Error('Every scheme in the deck is ongoing. Abandon one first.');
-      if (card.ongoing && g.archenemy.ongoing.length >= 12)
+      if (card.ongoing && g.archenemy.ongoing.length >= MAX_ONGOING_SCHEMES)
         throw new Error('Abandon an ongoing scheme before adding another');
       g.archenemy.schemes = bounded(g.archenemy.schemes + 1);
       g.archenemy.position = (index + 1) % g.archenemy.deck.length;

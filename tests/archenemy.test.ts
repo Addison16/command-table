@@ -193,6 +193,30 @@ describe('scheme deck', () => {
     expect(undone.archenemy!.schemes).toBe(16);
     expect(undone.archenemy!.revealed).toBe(seen.at(-1));
   });
+  it('cycles the full catalog with every ongoing scheme left face up', () => {
+    let g = action(archenemyGame(), { type: 'shuffleSchemes', sets: ['arc', 'e01', 'dsc'] });
+    const deck = g.archenemy!.deck!;
+    const seen: string[] = [];
+    for (let i = 0; i < 102; i++) {
+      g = action(g, { type: 'revealScheme' });
+      seen.push(g.archenemy!.revealed!);
+    }
+    expect(seen).toEqual(deck);
+    const ongoing = schemeCards.filter((card) => card.ongoing);
+    expect(ongoing).toHaveLength(21);
+    expect(g.archenemy!.ongoing).toHaveLength(21);
+    // The second pass skips every face-up ongoing scheme.
+    const second: string[] = [];
+    for (let i = 0; i < 81; i++) {
+      g = action(g, { type: 'revealScheme' });
+      second.push(g.archenemy!.revealed!);
+    }
+    expect(second).toEqual(deck.filter((id) => !schemeCard(id)!.ongoing));
+    expect(gameSchema.safeParse(g).success).toBe(true);
+    // Any face-up scheme can still be abandoned.
+    g = action(g, { type: 'abandonScheme', index: 20 });
+    expect(g.archenemy!.ongoing).toHaveLength(20);
+  });
   it('returns an abandoned ongoing scheme to the bottom of the deck', () => {
     let g = action(archenemyGame(), { type: 'shuffleSchemes', sets: ['arc'] });
     const ongoing = schemeCards.find((card) => card.set === 'arc' && card.ongoing)!;
