@@ -399,7 +399,10 @@ test('damage controls exclude each recipient’s own commanders and ignore a rem
       .flatMap((id) => Object.values(game.commanders).filter((entry) => entry.ownerId === id));
     await page.evaluate(
       ({ gameId, playerId, commanderId }) => {
-        sessionStorage.setItem(`mtg-util:damage-source:${gameId}:${playerId}`, commanderId);
+        localStorage.setItem(
+          'mtg-util:damage-sources',
+          JSON.stringify([[`${gameId}:${playerId}`, commanderId]]),
+        );
       },
       { gameId: game.id, playerId, commanderId: owned[0].id },
     );

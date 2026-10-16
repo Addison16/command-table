@@ -5,6 +5,10 @@ export const colorThemes = [
   { id: 'ocean', name: 'Ocean', description: 'Cool blues & sea glass' },
   { id: 'ember', name: 'Ember', description: 'Copper & fireside warmth' },
   { id: 'monochrome', name: 'Monochrome', description: 'Quiet charcoal & silver' },
+  { id: 'dawn', name: 'Dawn', description: 'Sunlit ivory & radiant gold' },
+  { id: 'crimson', name: 'Crimson', description: 'Blood red & candlelit velvet' },
+  { id: 'shadow', name: 'Shadow', description: 'Obsidian dusk & pale bone' },
+  { id: 'phyrexian', name: 'Phyrexian', description: 'Black oil & a toxic glow' },
 ] as const;
 
 export const accentColors = [
@@ -100,5 +104,47 @@ export const tableLooks = [
     colorTheme: 'ember',
     accentColor: 'copper',
     tableFinish: 'tabletop',
+  },
+  {
+    name: 'Sunlit plains',
+    description: 'Radiant gold on champagne silk',
+    colorTheme: 'dawn',
+    accentColor: 'theme',
+    tableFinish: 'glow',
+  },
+  {
+    name: 'Vampire’s court',
+    description: 'Crimson velvet and gilded stone',
+    colorTheme: 'crimson',
+    accentColor: 'gold',
+    tableFinish: 'gilded',
+  },
+  {
+    name: 'Necropolis',
+    description: 'Bone and violet under a storm',
+    colorTheme: 'shadow',
+    accentColor: 'violet',
+    tableFinish: 'obsidian',
+  },
+  {
+    name: 'Phyrexian oil',
+    description: 'A toxic sheen on black glass',
+    colorTheme: 'phyrexian',
+    accentColor: 'green',
+    tableFinish: 'aurora',
+  },
+  {
+    name: 'Tidal sanctum',
+    description: 'Sea glass and rolling thunder',
+    colorTheme: 'ocean',
+    accentColor: 'teal',
+    tableFinish: 'obsidian',
+  },
+  {
+    name: 'Opal dreams',
+    description: 'Rose light through a prismatic veil',
+    colorTheme: 'arcane',
+    accentColor: 'rose',
+    tableFinish: 'aurora',
   },
 ] as const;

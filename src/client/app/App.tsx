@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { archenemyOutcome, defaultSetup, teamOf, turnOrder } from '../../shared/game.js';
+import { archenemyOutcome, archenemySetup, defaultSetup, teamOf, turnOrder } from '../../shared/game.js';
 import { canUndoRoomAction } from '../../shared/permissions.js';
 import { type Game, type Roll } from '../../shared/schema.js';
 import {
@@ -24,6 +24,7 @@ import { gameMoments, stillWinner } from '../features/gameMoments.js';
 import { useTableLayout } from '../features/useTableLayout.js';
 import { Enhancements, PwaUpdates } from '../features/BrowserEnhancements.js';
 import { RecentGames } from '../features/RecentGames.js';
+import { QuickThemes } from '../features/AppearanceOptions.js';
 
 const SetupSheet = lazy(() => import('../features/Setup.js').then((m) => ({ default: m.SetupSheet })));
 const PlayerDetails = lazy(() =>
@@ -368,6 +369,13 @@ export function App() {
                   >
                     Quick 2 · 20 life
                   </button>
+                  <button
+                    className="text-button"
+                    disabled={state.recovery}
+                    onClick={() => void startLocal(archenemySetup()).catch(report)}
+                  >
+                    Archenemy · 1 vs 3
+                  </button>
                 </div>
                 <p className="home-mode-hint">
                   Play on one device offline, or bring everyone’s screens together in a shared room.
@@ -388,6 +396,7 @@ export function App() {
                 <span className="preview-table-caption">A LITTLE MAGIC. EVERY SEAT.</span>
               </div>
             </div>
+            <QuickThemes onMore={() => open('settings')} />
             <RecentGames />
             <p className="home-foot">
               <Icon name="shield" size={15} /> Made for the table, remembered in your browser.

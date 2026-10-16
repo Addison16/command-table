@@ -30,13 +30,19 @@ test('archenemy setup marks the villain, runs the scheme deck, and shares the te
 
   await page.getByRole('button', { name: /Player 3: open the scheme deck/ }).click();
   const deck = page.getByRole('dialog', { name: 'Scheme deck' });
-  await deck.getByRole('textbox', { name: /Scheme name/ }).fill('All Shall Smolder in My Wake');
-  await deck.getByRole('checkbox', { name: 'Ongoing scheme', exact: true }).check();
-  await deck.getByRole('button', { name: 'Set a scheme in motion', exact: true }).click();
+  await deck.getByRole('button', { name: /Shuffle the scheme deck · 102 cards/ }).click();
+  await expect(deck.getByTestId('schemes-in-deck')).toHaveText('102');
+  await deck.getByRole('button', { name: 'Set the top scheme in motion', exact: true }).click();
   await expect(deck.getByTestId('schemes-in-motion')).toHaveText('1');
-  await expect(deck.getByText('All Shall Smolder in My Wake')).toBeVisible();
-  await deck.getByRole('button', { name: 'Abandon All Shall Smolder in My Wake', exact: true }).click();
-  await expect(deck.getByText('No ongoing schemes.', { exact: false })).toBeVisible();
+  await expect(deck.getByTestId('revealed-scheme').getByRole('heading')).toBeVisible();
+  await deck.getByText('Playing with a physical deck?').click();
+  await deck.getByRole('combobox', { name: /Scheme name/ }).fill('My Own Scheme');
+  await deck.getByRole('checkbox', { name: 'Ongoing scheme', exact: true }).check();
+  await deck.getByRole('button', { name: 'Record a scheme set in motion', exact: true }).click();
+  await expect(deck.getByTestId('schemes-in-motion')).toHaveText('2');
+  await expect(deck.getByText('My Own Scheme', { exact: true })).toBeVisible();
+  await deck.getByRole('button', { name: 'Abandon My Own Scheme', exact: true }).click();
+  await expect(deck.getByText('My Own Scheme', { exact: true })).toHaveCount(0);
   await deck.getByRole('button', { name: 'Back to game', exact: true }).click();
 
   await page.getByRole('button', { name: 'Utilities', exact: true }).click();

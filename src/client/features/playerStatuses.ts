@@ -1,4 +1,5 @@
 import type { Game } from '../../shared/schema.js';
+import { schemeCard } from '../../shared/schemes.js';
 
 export type PlayerStatus = {
   kind: 'commander-damage' | 'poison' | 'tax' | 'scheme';
@@ -16,12 +17,13 @@ export function playerStatuses(game: Game, playerId: string): PlayerStatus[] {
   const statuses: PlayerStatus[] = [];
   if (game.archenemy?.playerId === playerId) {
     const { schemes, ongoing } = game.archenemy;
+    const revealed = schemeCard(game.archenemy.revealed);
     statuses.push({
       kind: 'scheme',
       key: 'scheme',
       label: ongoing.length ? `ARCHENEMY · ${ongoing.length} ONGOING` : 'ARCHENEMY · SCHEMES',
       value: String(schemes),
-      description: `${schemes} ${schemes === 1 ? 'scheme' : 'schemes'} set in motion.${ongoing.length ? ` Ongoing: ${ongoing.join(', ')}.` : ''}`,
+      description: `${schemes} ${schemes === 1 ? 'scheme' : 'schemes'} set in motion.${revealed ? ` Latest: ${revealed.name}.` : ''}${ongoing.length ? ` Ongoing: ${ongoing.join(', ')}.` : ''}`,
       warning: false,
     });
   }
