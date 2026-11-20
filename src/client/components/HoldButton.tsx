@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { newId } from '../../shared/random.js';
 import { useApp } from '../app/store.js';
+/** Repeats that still move by one, and then by five, before a hold moves by ten. */
+export const HOLD_SINGLE_STEPS = 9;
+export const HOLD_FIVE_STEPS = 21;
 export function HoldButton({
   label,
   children,
   disabled,
   onStep,
   className = '',
+  accelerate = false,
 }: {
   label: string;
   children: ReactNode;
   disabled?: boolean;
-  onStep: (groupId: string) => void;
+  /** `size` is 1 unless `accelerate` is set and the control has been held for a while. */
+  onStep: (groupId: string, size: number) => void;
   className?: string;
+  /** A long hold moves in fives, then tens, so a big swing takes a moment instead of a minute. */
+  accelerate?: boolean;
 }) {
   const pointers = useRef(new Map<number, { timer: ReturnType<typeof setTimeout>; group: string }>());
   const step = useRef(onStep);
@@ -59,12 +66,15 @@ export function HoldButton({
         }
         const pid = e.pointerId,
           group = newId();
-        step.current(group);
+        step.current(group, 1);
         feedback();
+        let repeats = 0;
         const repeat = () => {
           if (!pointers.current.has(pid)) return;
-          step.current(group);
-          pointers.current.get(pid)!.timer = setTimeout(repeat, 130);
+          repeats++;
+          const size = !accelerate || repeats <= HOLD_SINGLE_STEPS ? 1 : repeats <= HOLD_FIVE_STEPS ? 5 : 10;
+          step.current(group, size);
+          pointers.current.get(pid)!.timer = setTimeout(repeat, size === 1 ? 130 : 190);
         };
         pointers.current.set(pid, { group, timer: setTimeout(repeat, 350) });
       }}
@@ -73,7 +83,7 @@ export function HoldButton({
       onLostPointerCapture={(e) => stop(e.pointerId)}
       onClick={(e) => {
         if (e.detail === 0 && !disabled) {
-          step.current(newId());
+          step.current(newId(), 1);
           feedback();
         }
       }}

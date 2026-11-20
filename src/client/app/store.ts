@@ -4,6 +4,8 @@ import {
   createGame,
   defaultSetup,
   setupFromGame,
+  makePlanarDeck,
+  makePlanarRoll,
   makeRoll,
   makeSchemeDeck,
   reduceGame,
@@ -21,6 +23,7 @@ import { ConflictError, initialProfile, Repository, type Profile } from '../stor
 import { acquireEditorIdentity } from '../storage/tabIdentity.js';
 import { playCue, unlockAudio } from '../components/feedback.js';
 import { cacheAppearance } from '../features/appearance.js';
+import { statChange, statRecord } from '../features/stats.js';
 
 let tabId = newId();
 try {
@@ -49,6 +52,10 @@ type State = {
   recovery: boolean;
   clockOffset: number;
   unresolved: string[];
+  /** Device-only seat photos, keyed by lower-cased player name. */
+  playmats: Record<string, string>;
+  /** Bumped whenever the saved stats change, so open views reload them. */
+  statsVersion: number;
 };
 export const useApp = create<State>(() => ({
   ready: false,
@@ -64,6 +71,8 @@ export const useApp = create<State>(() => ({
   recovery: false,
   clockOffset: 0,
   unresolved: [],
+  playmats: {},
+  statsVersion: 0,
 }));
 let queue = Promise.resolve();
 let editorResume: Promise<void> | undefined;
@@ -113,6 +122,7 @@ export async function hydrate() {
     const profile = await repository.profile();
     if (!repository.memory) cacheAppearance(profile);
     useApp.setState({ profile });
+    useApp.setState({ playmats: await repository.playmats().catch(() => ({})) });
     const { game, readOnly } = await repository.active();
     useApp.setState({ localGame: game, game, confirmed: game, readOnly });
     const join = new URLSearchParams(location.search).has('join');
@@ -192,6 +202,8 @@ export function act(command: Command | AdminCommand, groupId?: string): Promise<
     newGameId: c.type === 'rematch' ? newId() : undefined,
     roll,
     schemeDeck: makeSchemeDeck(state.game, c, randomInt),
+    planarDeck: makePlanarDeck(state.game, c, randomInt),
+    planarRoll: makePlanarRoll(c, randomInt),
   };
   try {
     reduceGame(state.game, c, context);
@@ -264,8 +276,7 @@ async function saveCommand(command: SavedCommand, review?: LifeReview): Promise<
       state.room?.id === review.roomId &&
       state.room?.revision === review.roomRevision &&
       state.screen === 'board' &&
-      !state.pending &&
-      state.mode === 'local');
+      !state.pending);
   try {
     await editorResume;
   } catch (error) {
@@ -279,8 +290,14 @@ async function saveCommand(command: SavedCommand, review?: LifeReview): Promise<
   }
   if (state.mode === 'room') {
     const seat = state.confirmed && commandSeat(state.confirmed, command);
-    if (command.type === 'groupLife' || !seat || !canEdit(seat)) {
-      report(new Error('You can change only your own seat in a shared room.'));
+    if (command.type === 'groupLife' ? !isHost() || !state.connected : !seat || !canEdit(seat)) {
+      report(
+        new Error(
+          command.type === 'groupLife'
+            ? 'Only the host can apply a group life change in a shared room.'
+            : 'You can change only your own seat in a shared room.',
+        ),
+      );
       return false;
     }
     if (!roomSavePlayer) {
@@ -542,6 +559,52 @@ setInterval(() => {
         /* A live editor may have renewed its lease in the meantime. */
       });
 }, 6000);
+export function isSpectator() {
+  const s = useApp.getState();
+  return s.mode === 'room' && s.room?.me.status === 'spectator';
+}
+/** True when this device may use table-wide tools such as the planar deck. */
+export function isSeated() {
+  const s = useApp.getState();
+  return (
+    !s.readOnly &&
+    (s.mode === 'local' || (s.connected && s.room?.me.status === 'approved' && !!s.room.me.seatId))
+  );
+}
+export async function setPlaymatPhoto(name: string, image: string | null) {
+  const key = name.trim().toLowerCase();
+  const current = { ...useApp.getState().playmats };
+  delete current[key];
+  // Keep the newest dozen so a browser's storage quota is never at risk.
+  const next = Object.fromEntries([...Object.entries(current).slice(-11), ...(image ? [[key, image]] : [])]);
+  useApp.setState({ playmats: next });
+  try {
+    await repository.put('playmats', next);
+  } catch {
+    useApp.setState({ storageWarning: 'The photo could not be saved. Check available browser storage.' });
+  }
+}
+// Finished games feed the playgroup stats. Watching confirmed snapshots covers
+// one-device play and shared rooms alike, including rematches.
+let observedGame: Game | undefined;
+useApp.subscribe((state) => {
+  const previous = observedGame;
+  observedGame = state.confirmed;
+  if (!state.ready) return;
+  const change = statChange(previous, state.confirmed);
+  if (!change.record && !change.remove) return;
+  void repository
+    .updateStats({
+      ...(change.record
+        ? { record: statRecord(change.record, state.mode, Date.now() + state.clockOffset) }
+        : {}),
+      ...(change.remove ? { remove: change.remove } : {}),
+    })
+    .then(() => useApp.setState((s) => ({ statsVersion: s.statsVersion + 1 })))
+    .catch(() => {
+      /* Stats are a convenience; a full disk must not interrupt play. */
+    });
+});
 export function isHost() {
   const s = useApp.getState();
   return s.mode === 'local' || s.room?.hostId === s.room?.me.id;

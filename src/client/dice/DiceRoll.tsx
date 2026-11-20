@@ -15,7 +15,9 @@ export function rollTitle(roll: Roll) {
       ? 'Coin flip'
       : roll.kind === 'd20-each'
         ? 'd20 for everyone'
-        : 'Who goes first?';
+        : roll.kind === 'opponent'
+          ? 'Random opponent'
+          : 'Who goes first?';
 }
 export function DiceRoll({
   roll,
@@ -123,7 +125,11 @@ export function DiceRoll({
                 <div aria-live="polite" aria-atomic="true">
                   {roll.winner ? (
                     <>
-                      <p className="eyebrow gold">FIRST TO PLAY</p>
+                      <p className="eyebrow gold">
+                        {roll.kind === 'opponent'
+                          ? `${rollingPlayer ? `${rollingPlayer.name.toUpperCase()}’S ` : ''}RANDOM OPPONENT`
+                          : 'FIRST TO PLAY'}
+                      </p>
                       <h2 className="winner-name">{game.players[roll.winner]?.name}</h2>
                       {roll.kind === 'd20-each' && (
                         <div className="player-roll-scores">
@@ -158,18 +164,22 @@ export function DiceRoll({
                     </>
                   )}
                 </div>
-                {roll.winner && game.settings.turnTracking && game.status === 'active' && isHost() && (
-                  <button
-                    className="primary full"
-                    disabled={!live || readOnly}
-                    onClick={async () => {
-                      await act({ type: 'turn', playerId: roll.winner, advance: false });
-                      onClose();
-                    }}
-                  >
-                    Confirm first player
-                  </button>
-                )}
+                {roll.winner &&
+                  roll.kind !== 'opponent' &&
+                  game.settings.turnTracking &&
+                  game.status === 'active' &&
+                  isHost() && (
+                    <button
+                      className="primary full"
+                      disabled={!live || readOnly}
+                      onClick={async () => {
+                        await act({ type: 'turn', playerId: roll.winner, advance: false });
+                        onClose();
+                      }}
+                    >
+                      Confirm first player
+                    </button>
+                  )}
                 <div className="button-row">
                   <button
                     className="secondary"
@@ -180,7 +190,8 @@ export function DiceRoll({
                         kind: roll.kind,
                         sides: roll.kind === 'dice' ? (roll.sides as 4 | 6 | 8 | 10 | 12 | 20 | 100) : 20,
                         count: Math.max(1, roll.values.length),
-                        ...((roll.kind === 'dice' || roll.kind === 'coin') && roll.playerId
+                        ...((roll.kind === 'dice' || roll.kind === 'coin' || roll.kind === 'opponent') &&
+                        roll.playerId
                           ? { playerId: roll.playerId }
                           : {}),
                       })

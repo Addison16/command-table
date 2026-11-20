@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LIMIT } from '../../shared/schema.js';
 import { isArchenemy, opponentsOf } from '../../shared/game.js';
-import { notify, saveGroupLife, useApp } from '../app/store.js';
+import { isHost, notify, saveGroupLife, useApp } from '../app/store.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import '../styles/group-life.css';
 
@@ -44,7 +44,7 @@ export function GroupLife({ onClose }: { onClose: () => void }) {
     (!caster || caster.life + gain <= LIMIT) &&
     targets.every((player) => player && player.life - loss >= -LIMIT);
   const available =
-    state.mode === 'local' &&
+    (state.mode === 'local' || (state.connected && isHost())) &&
     !state.readOnly &&
     !state.recovery &&
     !state.pending &&
@@ -231,7 +231,11 @@ export function GroupLife({ onClose }: { onClose: () => void }) {
           </p>
         )}
         {state.mode === 'room' && (
-          <p className="hint">In shared rooms, each player records life changes on their own seat.</p>
+          <p className="hint">
+            {isHost()
+              ? 'As host, you apply this to every chosen seat at once. Undo reverses the whole effect.'
+              : 'Only the host can apply a group effect. Players record life changes on their own seat.'}
+          </p>
         )}
         {state.readOnly && (
           <p className="hint">Another tab controls this game. Take over there before editing.</p>

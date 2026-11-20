@@ -1,7 +1,10 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import { z } from 'zod';
 import {
+  commanderNameSchema,
   gameSchema,
+  nameSchema,
+  palettes,
   setupSchema,
   recentRoomSchema,
   type RecentRoom,
@@ -11,6 +14,8 @@ import {
 } from '../../shared/schema.js';
 import { newId } from '../../shared/random.js';
 import { recoveryDeadline, reduceGame, type Context } from '../../shared/game.js';
+import { commanderCardSchema } from '../../shared/cards.js';
+import { MAX_STAT_RECORDS, statRecordSchema, type StatRecord } from '../features/stats.js';
 import {
   accentColors,
   colorThemes,
@@ -18,6 +23,17 @@ import {
   tableFinishes,
 } from '../features/appearancePresets.js';
 
+/** A regular at this table: one tap fills their seat in a new game. */
+export const savedPlayerSchema = z.object({
+  id: z.string().uuid(),
+  name: nameSchema,
+  color: z.enum(palettes),
+  commanders: z.array(commanderNameSchema).min(1).max(2),
+  commanderCards: z.array(commanderCardSchema.nullable()).min(1).max(2).optional(),
+  playmat: commanderCardSchema.optional(),
+});
+export type SavedPlayer = z.infer<typeof savedPlayerSchema>;
+export const MAX_SAVED_PLAYERS = 24;
 const preferencesSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -52,6 +68,8 @@ const preferencesSchema = z
     view: z.enum(['table', 'mine']),
     mySeat: z.string().nullable(),
     setup: setupSchema.optional(),
+    // One unreadable entry must not lock the player out of their preferences.
+    savedPlayers: z.array(savedPlayerSchema).max(MAX_SAVED_PLAYERS).default([]).catch([]),
   })
   .transform((profile) => ({
     ...profile,
@@ -79,6 +97,7 @@ export const initialProfile = (): Profile => ({
   displayName: '',
   view: 'table',
   mySeat: null,
+  savedPlayers: [],
 });
 export class ConflictError extends Error {}
 type Stored = { game: Game; owner: string; until: number };
@@ -302,6 +321,44 @@ export class Repository {
     await this.commit(saved, undefined, true, false, id);
     return this.active();
   }
+  async stats(): Promise<StatRecord[]> {
+    const stored = await this.get<unknown[]>('stats');
+    return Array.isArray(stored)
+      ? stored.flatMap((entry) => {
+          const parsed = statRecordSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
+  }
+  /** Add or replace one finished game, or remove it, in a single transaction. */
+  async updateStats(change: { record?: StatRecord; remove?: string; clear?: boolean }) {
+    const tx = this.memory ? undefined : this.db!.transaction('records', 'readwrite');
+    const records = tx?.store ?? {
+      get: (key: string) => this.get(key),
+      put: (value: unknown, key: string) => this.put(key, value),
+    };
+    const stored = change.clear ? [] : (((await records.get('stats')) as StatRecord[] | undefined) ?? []);
+    const id = change.record?.id ?? change.remove;
+    const next = [
+      ...(change.record ? [change.record] : []),
+      ...(Array.isArray(stored) ? stored : []).filter((entry) => entry?.id !== id),
+    ]
+      .sort((a, b) => b.endedAt - a.endedAt)
+      .slice(0, MAX_STAT_RECORDS);
+    await records.put(next, 'stats');
+    await tx?.done;
+  }
+  /** Photos used as seat backgrounds on this device only, keyed by player name. */
+  async playmats(): Promise<Record<string, string>> {
+    const stored = await this.get<Record<string, string>>('playmats');
+    return stored && typeof stored === 'object'
+      ? Object.fromEntries(
+          Object.entries(stored).filter(
+            ([, value]) => typeof value === 'string' && value.startsWith('data:image/'),
+          ),
+        )
+      : {};
+  }
   async checkpoint() {
     const value = await this.get('checkpoint');
     return value ? gameSchema.parse(value) : undefined;
@@ -356,7 +413,7 @@ export class Repository {
       preset: view.game?.settings.preset ?? 'Shared room',
       updatedAt: Date.now(),
       expiresAt: view.expiresAt,
-      approved: view.me.status === 'approved',
+      approved: view.me.status === 'approved' || view.me.status === 'spectator',
       status: view.game?.status ?? 'active',
       recoverUntil: view.game ? recoveryDeadline(view.game) : null,
       canReopen: view.hostId === view.me.id,

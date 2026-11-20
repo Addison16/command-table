@@ -8,10 +8,39 @@ import { useTableLayout } from './useTableLayout.js';
 import { CommanderBackdrop } from '../components/CommanderArtwork.js';
 import type { CommanderCard } from '../../shared/cards.js';
 import { playerStatuses, type PlayerStatus } from './playerStatuses.js';
-import { isTeamTurn } from '../../shared/game.js';
+import { sharesTurn, teamIndex, teamName } from '../../shared/game.js';
+import '../styles/extras.css';
 import '../styles/player-statuses.css';
 import '../styles/archenemy.css';
 
+const clock = (ms: number) => {
+  const seconds = Math.floor(Math.max(0, ms) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes >= 60 ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}` : minutes}:${String(seconds % 60).padStart(2, '0')}`;
+};
+/** How long the current turn has run. It stops with the game timer and when the game ends. */
+function TurnClock() {
+  const startedAt = useApp((s) => s.game?.turn.startedAt);
+  const pausedAt = useApp((s) => s.game?.timer.pausedAt ?? null);
+  const offset = useApp((s) => (s.mode === 'room' ? s.clockOffset : 0));
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAt === undefined || pausedAt !== null) return;
+    setNow(Date.now());
+    const timer = setInterval(() => {
+      if (!document.hidden) setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [startedAt, pausedAt]);
+  if (startedAt === undefined) return null;
+  const elapsed = (pausedAt ?? now + offset) - startedAt;
+  return (
+    <time className="turn-clock" data-testid="turn-clock" aria-label={`Turn time ${clock(elapsed)}`}>
+      {' · '}
+      {clock(elapsed)}
+    </time>
+  );
+}
 const PlayerTile = memo(function PlayerTile({
   id,
   index,
@@ -57,12 +86,11 @@ const PlayerTile = memo(function PlayerTile({
         initiative: game.markers.initiative === id,
         role: game.archenemy ? (game.archenemy.playerId === id ? 'archenemy' : 'team') : null,
         // The team shares one turn in Archenemy, so every team seat shows it.
-        turn:
-          game.settings.turnTracking &&
-          (game.turn.playerId === id ||
-            (isTeamTurn(game) && game.archenemy?.playerId !== id && !seat.eliminated))
-            ? game.turn.number
-            : 0,
+        turn: game.settings.turnTracking && sharesTurn(game, id) ? game.turn.number : 0,
+        team: game.teams ? teamIndex(game, id) : -1,
+        // A photo chosen on this device wins over shared card art.
+        photo: s.playmats[seat.name.trim().toLowerCase()] ?? '',
+        playmat: seat.playmat ? JSON.stringify(seat.playmat) : '',
         presence: member ? Boolean(member.connected) : null,
         artwork: JSON.stringify(
           Object.values(game.commanders)
@@ -73,7 +101,12 @@ const PlayerTile = memo(function PlayerTile({
     }),
   );
   const artwork = player?.artwork ?? '[]';
-  const cards = useMemo(() => JSON.parse(artwork) as CommanderCard[], [artwork]);
+  const playmat = player?.playmat ?? '';
+  // A chosen seat background replaces the commander art behind the life total.
+  const cards = useMemo(
+    () => (playmat ? [JSON.parse(playmat) as CommanderCard] : (JSON.parse(artwork) as CommanderCard[])),
+    [artwork, playmat],
+  );
   const statusData = player?.statuses ?? '[]';
   const statuses = useMemo(() => JSON.parse(statusData) as PlayerStatus[], [statusData]);
   const [delta, setDelta] = useState(0);
@@ -99,11 +132,19 @@ const PlayerTile = memo(function PlayerTile({
       style={span ? ({ '--seat-span': span } as CSSProperties) : undefined}
     >
       <div
-        className={`tile-content ${flipped && !myView ? 'flipped' : ''} ${cards.length ? 'with-commander-art' : ''}`}
+        className={`tile-content ${flipped && !myView ? 'flipped' : ''} ${cards.length || player.photo ? 'with-commander-art' : ''}`}
         data-facing={flipped && !myView ? 'across' : 'near'}
       >
         <Sigil index={index} className="tile-sigil" />
-        <CommanderBackdrop cards={cards} />
+        {player.photo ? (
+          <div className="commander-backdrop" aria-hidden="true">
+            <div className="commander-art-pane">
+              <img src={player.photo} alt="" draggable={false} />
+            </div>
+          </div>
+        ) : (
+          <CommanderBackdrop cards={cards} />
+        )}
         <button
           className="player-heading"
           onClick={() => openPlayer(id)}
@@ -111,6 +152,11 @@ const PlayerTile = memo(function PlayerTile({
         >
           <span className="seat-index">{String(index + 1).padStart(2, '0')}</span>
           <span className="player-name">{player.name}</span>
+          {player.team >= 0 && (
+            <span className="team-mark" data-team={player.team}>
+              {teamName(player.team).toUpperCase()}
+            </span>
+          )}
           {player.role === 'archenemy' && (
             // A compact mark keeps long names readable; the seat label and border say the rest.
             <span className="archenemy-mark" title="Archenemy" role="img" aria-label="Archenemy">
@@ -130,7 +176,10 @@ const PlayerTile = memo(function PlayerTile({
             className="decrease"
             label={`Decrease ${player.name}'s life`}
             disabled={disabled}
-            onStep={(group) => void act({ type: 'adjust', playerId: id, field: 'life', delta: -1 }, group)}
+            accelerate
+            onStep={(group, size) =>
+              void act({ type: 'adjust', playerId: id, field: 'life', delta: -size }, group)
+            }
           >
             <Icon name="minus" size={26} />
           </HoldButton>
@@ -150,7 +199,10 @@ const PlayerTile = memo(function PlayerTile({
             className="increase"
             label={`Increase ${player.name}'s life`}
             disabled={disabled}
-            onStep={(group) => void act({ type: 'adjust', playerId: id, field: 'life', delta: 1 }, group)}
+            accelerate
+            onStep={(group, size) =>
+              void act({ type: 'adjust', playerId: id, field: 'life', delta: size }, group)
+            }
           >
             <Icon name="plus" size={26} />
           </HoldButton>
@@ -162,7 +214,9 @@ const PlayerTile = memo(function PlayerTile({
               const action =
                 status.kind === 'scheme'
                   ? 'open the scheme deck'
-                  : `open commander ${status.kind === 'tax' ? 'tax' : 'damage'}`;
+                  : status.kind === 'counter'
+                    ? 'open player details'
+                    : `open commander ${status.kind === 'tax' ? 'tax' : 'damage'}`;
               return (
                 <Tag
                   className={`status-chip ${status.warning ? 'is-warning' : ''}`}
@@ -177,11 +231,16 @@ const PlayerTile = memo(function PlayerTile({
                       ? undefined
                       : status.kind === 'scheme'
                         ? openSchemes
-                        : () => openCommander(id, status.kind === 'tax' ? status.key.slice(4) : undefined)
+                        : status.kind === 'counter'
+                          ? () => openPlayer(id)
+                          : () => openCommander(id, status.kind === 'tax' ? status.key.slice(4) : undefined)
                   }
                   title={status.description}
                 >
-                  <Icon name={status.warning ? 'warning' : status.kind} size={13} />
+                  <Icon
+                    name={status.warning ? 'warning' : status.kind === 'counter' ? 'spark' : status.kind}
+                    size={13}
+                  />
                   <span className="status-chip-label">{status.label}</span>
                   <strong className="status-chip-value">{status.value}</strong>
                 </Tag>
@@ -210,7 +269,7 @@ const PlayerTile = memo(function PlayerTile({
                   : undefined
               }
             >
-              {cards.length ? 'ART · SCRYFALL' : 'LIFE TOTAL'}
+              {player.photo ? 'LIFE TOTAL' : cards.length ? 'ART · SCRYFALL' : 'LIFE TOTAL'}
             </span>
           )}
           <span className="tile-trackers">
@@ -226,7 +285,8 @@ const PlayerTile = memo(function PlayerTile({
             )}
             {player.turn > 0 && (
               <span>
-                {player.role === 'team' ? 'TEAM ' : ''}TURN {player.turn}
+                {player.role === 'team' || player.team >= 0 ? 'TEAM ' : ''}TURN {player.turn}
+                <TurnClock />
               </span>
             )}
           </span>

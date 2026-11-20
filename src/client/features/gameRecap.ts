@@ -1,4 +1,4 @@
-import { elapsed } from '../../shared/game.js';
+import { elapsed, teamOf } from '../../shared/game.js';
 import type { Game } from '../../shared/schema.js';
 import { emblemPaths, emblemSize } from '../brand/emblem.js';
 
@@ -19,7 +19,22 @@ export type Recap = {
     winner: boolean;
     archenemy?: boolean;
   }[];
+  /** Life totals over the game, in player order, when the game recorded them. */
+  life?: { from: number; to: number; points: { t: number; l: number[] }[] };
 };
+
+/** The recap result that matches a winner recorded during the game. */
+export function recordedResult(game: Game): string {
+  const result = game.result;
+  if (!result) return '';
+  if (result.draw) return 'draw';
+  if (result.winners.length === 1) return result.winners[0];
+  const same = (ids: string[]) =>
+    ids.length === result.winners.length && ids.every((id) => result.winners.includes(id));
+  if (game.archenemy && same(teamOf(game))) return 'team';
+  const team = game.teams?.findIndex(same) ?? -1;
+  return team >= 0 ? `team:${team}` : result.winners.length ? 'recorded' : '';
+}
 
 export function recapDuration(milliseconds: number) {
   const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
@@ -38,6 +53,15 @@ export function createRecap(game: Game, capturedAt: number, result = ''): Recap 
   const winnerId = final && game.order.includes(result) ? result : null;
   // In Archenemy the whole team shares a victory.
   const teamWins = final && result === 'team' && !!game.archenemy;
+  // Two-Headed Giant teams, or any winners recorded together during the game.
+  const side = !final
+    ? []
+    : /^team:\d$/.test(result)
+      ? (game.teams?.[Number(result.slice(5))] ?? [])
+      : result === 'recorded'
+        ? (game.result?.winners ?? [])
+        : [];
+  const log = game.lifeLog ?? [];
   return {
     gameId: game.id,
     final,
@@ -48,9 +72,11 @@ export function createRecap(game: Game, capturedAt: number, result = ''): Recap 
       ? `${game.players[winnerId].name} wins`
       : teamWins
         ? 'The team wins'
-        : final && result === 'draw'
-          ? 'Draw'
-          : '',
+        : side.length
+          ? `${side.map((id) => game.players[id].name).join(' & ')} win`
+          : final && result === 'draw'
+            ? 'Draw'
+            : '',
     players: game.order.map((id) => ({
       id,
       name: game.players[id].name,
@@ -62,9 +88,12 @@ export function createRecap(game: Game, capturedAt: number, result = ''): Recap 
             .map((commander) => commander.label)
         : [],
       eliminated: game.players[id].eliminated,
-      winner: id === winnerId || (teamWins && id !== game.archenemy!.playerId),
+      winner: id === winnerId || (teamWins && id !== game.archenemy!.playerId) || side.includes(id),
       ...(game.archenemy?.playerId === id ? { archenemy: true } : {}),
     })),
+    ...(log.length > 1 && log.every((point) => point.l.length === game.order.length)
+      ? { life: { from: log[0].t, to: Math.max(at, log.at(-1)!.t), points: log } }
+      : {}),
   };
 }
 
@@ -113,6 +142,68 @@ function box(ctx: CanvasRenderingContext2D, x: number, y: number, width: number,
   ctx.roundRect(x, y, width, height, r);
 }
 
+const GRAPH_HEIGHT = 330;
+/** A step line per player: life only ever changes at a recorded moment. */
+function lifeGraph(ctx: CanvasRenderingContext2D, recap: Recap, y: number) {
+  const life = recap.life!;
+  const left = 132,
+    right = 990,
+    top = y + 74,
+    bottom = y + GRAPH_HEIGHT - 44;
+  ctx.fillStyle = '#ffffff07';
+  box(ctx, 62, y, 956, GRAPH_HEIGHT);
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff18';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = muted;
+  ctx.font = `600 18px ${bodyFont}`;
+  ctx.fillText('LIFE OVER THE GAME', 92, y + 44);
+  const values = life.points.flatMap((point) => point.l);
+  const low = Math.min(0, ...values),
+    high = Math.max(1, ...values);
+  const span = Math.max(1, life.to - life.from);
+  const px = (t: number) =>
+    left + ((Math.min(life.to, Math.max(life.from, t)) - life.from) / span) * (right - left);
+  const py = (value: number) => bottom - ((value - low) / (high - low)) * (bottom - top);
+  ctx.font = `400 18px ${bodyFont}`;
+  ctx.textAlign = 'right';
+  for (const mark of low < 0 ? [low, 0, high] : [0, high]) {
+    ctx.fillStyle = muted;
+    ctx.fillText(String(mark), left - 14, py(mark) + 6);
+    ctx.strokeStyle = '#ffffff14';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(left, py(mark));
+    ctx.lineTo(right, py(mark));
+    ctx.stroke();
+  }
+  ctx.textAlign = 'left';
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const [index, player] of recap.players.entries()) {
+    ctx.strokeStyle = colors[player.color] ?? colors.ivory;
+    ctx.lineWidth = player.winner ? 5 : 3;
+    ctx.globalAlpha = player.eliminated && !player.winner ? 0.6 : 1;
+    ctx.beginPath();
+    ctx.moveTo(px(life.points[0].t), py(life.points[0].l[index]));
+    for (const [at, point] of life.points.entries()) {
+      if (!at) continue;
+      ctx.lineTo(px(point.t), py(life.points[at - 1].l[index]));
+      ctx.lineTo(px(point.t), py(point.l[index]));
+    }
+    ctx.lineTo(right, py(life.points.at(-1)!.l[index]));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = muted;
+  ctx.font = `400 17px ${bodyFont}`;
+  ctx.fillText('Start', left, y + GRAPH_HEIGHT - 14);
+  ctx.textAlign = 'right';
+  ctx.fillText(recap.final ? 'End' : 'Now', right, y + GRAPH_HEIGHT - 14);
+  ctx.textAlign = 'left';
+}
+
 function sigil(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
   // Draw the same local vector artwork used by the homepage and install icons.
   ctx.save();
@@ -155,7 +246,11 @@ export async function renderRecap(recap: Recap): Promise<Blob> {
     return { player, commanders, height: Math.max(174, 105 + commanders.length * 35) };
   });
   canvas.width = 1080;
-  canvas.height = 396 + rows.reduce((height, row) => height + row.height + 16, 0) + 122;
+  canvas.height =
+    396 +
+    rows.reduce((height, row) => height + row.height + 16, 0) +
+    (recap.life ? GRAPH_HEIGHT + 16 : 0) +
+    122;
   const background = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
   background.addColorStop(0, '#1b283a');
   background.addColorStop(0.45, '#101823');
@@ -236,6 +331,7 @@ export async function renderRecap(recap: Recap): Promise<Blob> {
     ctx.textAlign = 'left';
     y += height + 16;
   }
+  if (recap.life) lifeGraph(ctx, recap, y);
   ctx.fillStyle = muted;
   ctx.font = `400 22px ${bodyFont}`;
   ctx.fillText('Until the next game.', 66, canvas.height - 76);

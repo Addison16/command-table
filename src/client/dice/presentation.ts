@@ -12,7 +12,8 @@ export function visualDice(roll: Roll, game: Game, round: number): VisualDie[] {
       color: game.players[r.playerId]?.color ?? 'ivory',
     }));
   // A random pick must not disclose its winner through the die's color.
-  if (roll.kind === 'first') return [{ value: 1, sides: 20, symbol: true, color: 'ivory' }];
+  if (roll.kind === 'first' || roll.kind === 'opponent')
+    return [{ value: 1, sides: 20, symbol: true, color: 'ivory' }];
   const player = roll.playerId ? game.players[roll.playerId] : undefined;
   const color = player?.color ?? 'ivory';
   return roll.values.flatMap((value, i) =>

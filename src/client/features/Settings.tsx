@@ -4,6 +4,8 @@ import { Field, Sheet, Toggle } from '../components/ui.js';
 import { TableLayoutOptions } from './TableLayout.js';
 import { playCue, stopSounds } from '../components/feedback.js';
 import { AppearanceOptions } from './AppearanceOptions.js';
+import { SavedPlayersList } from './SavedPlayers.js';
+import '../styles/extras.css';
 
 export function Settings({ onClose }: { onClose: () => void }) {
   const profile = useApp((s) => s.profile);
@@ -85,6 +87,41 @@ export function Settings({ onClose }: { onClose: () => void }) {
             ? 'Enter fullscreen'
             : 'Fullscreen unavailable in this browser'}
       </button>
+      <SavedPlayersList />
+      <section className="detail-section">
+        <h3>Keyboard shortcuts</h3>
+        <p className="hint">On a computer, these work while the board is showing and no sheet is open.</p>
+        <dl className="shortcut-list">
+          <dt>
+            <kbd>U</kbd> or <kbd>Ctrl</kbd> <kbd>Z</kbd>
+          </dt>
+          <dd>Undo the latest action</dd>
+          <dt>
+            <kbd>N</kbd>
+          </dt>
+          <dd>Next turn, when turn tracking is on</dd>
+          <dt>
+            <kbd>1</kbd> – <kbd>8</kbd>
+          </dt>
+          <dd>Open that seat’s player details</dd>
+          <dt>
+            <kbd>D</kbd>
+          </dt>
+          <dd>Dice and utilities</dd>
+          <dt>
+            <kbd>M</kbd>
+          </dt>
+          <dd>Game menu</dd>
+          <dt>
+            <kbd>H</kbd>
+          </dt>
+          <dd>Game history</dd>
+          <dt>
+            <kbd>?</kbd>
+          </dt>
+          <dd>These settings</dd>
+        </dl>
+      </section>
       <section className="detail-section">
         <h3>Make a place on your home screen</h3>
         <p>

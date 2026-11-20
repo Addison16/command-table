@@ -1,6 +1,20 @@
 import { useState } from 'react';
 import { LIMIT, palettes, type Game } from '../../shared/schema.js';
-import { act, canEdit, saveExact, savePlayer, useApp, updateProfile } from '../app/store.js';
+import {
+  act,
+  canEdit,
+  report,
+  saveExact,
+  savePlayer,
+  setPlaymatPhoto,
+  useApp,
+  updateProfile,
+} from '../app/store.js';
+import { DeckImport } from './DeckImport.js';
+import { savedFromGame, saveRegular } from './SavedPlayers.js';
+import { seatPhoto } from './seatPhoto.js';
+import { teammates } from '../../shared/game.js';
+import '../styles/extras.css';
 import { ask, Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { HoldButton } from '../components/HoldButton.js';
 import { facesAcross } from './TableLayout.js';
@@ -41,7 +55,8 @@ function Counter({
           <HoldButton
             disabled={disabled || (field !== 'life' && value === 0)}
             label={`Decrease ${field}`}
-            onStep={(group) => void act({ type: 'adjust', playerId, field, delta: -1 }, group)}
+            accelerate={field === 'life'}
+            onStep={(group, size) => void act({ type: 'adjust', playerId, field, delta: -size }, group)}
           >
             <Icon name="minus" />
           </HoldButton>
@@ -49,7 +64,8 @@ function Counter({
           <HoldButton
             disabled={disabled}
             label={`Increase ${field}`}
-            onStep={(group) => void act({ type: 'adjust', playerId, field, delta: 1 }, group)}
+            accelerate={field === 'life'}
+            onStep={(group, size) => void act({ type: 'adjust', playerId, field, delta: size }, group)}
           >
             <Icon name="plus" />
           </HoldButton>
@@ -132,6 +148,34 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
   const disabled = !canEdit(playerId) || player.eliminated || game.status === 'ended';
   const damageDisabled = disabled || !source;
   const manage = canEdit(playerId) && game.status === 'active';
+  const pending = useApp((s) => s.pending);
+  const photo = useApp((s) => s.playmats[player.name.trim().toLowerCase()]);
+  const [backdrop, setBackdrop] = useState<{ label: string; card: CommanderCard | null }>();
+  const [backdropStatus, setBackdropStatus] = useState('');
+  const teammate = game.teams ? teammates(game, playerId).find((id) => id !== playerId) : undefined;
+  const saveBackdrop = async (card: CommanderCard | null) => {
+    setBackdropStatus('');
+    const saved = await savePlayer({
+      type: 'editPlayer',
+      playerId,
+      name: player.name,
+      color: player.color,
+      commanders: commanders.map((commander) => ({
+        id: commander.id,
+        label: commander.label,
+        card: commander.card ?? null,
+      })),
+      playmat: card,
+    });
+    if (saved) setBackdrop(undefined);
+    setBackdropStatus(
+      saved
+        ? card
+          ? 'Seat background saved.'
+          : 'Seat background removed.'
+        : 'Save not confirmed. Try again.',
+    );
+  };
   return (
     <Sheet
       title={player.name}
@@ -142,7 +186,9 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
             ? 'The archenemy. You scheme alone against the whole table.'
             : game.archenemy
               ? 'On the team. Your teammates share your turn and your victory.'
-              : 'Your life, your legends, your next move.'
+              : teammate
+                ? `Teamed with ${game.players[teammate].name}. You share life, poison and your turn.`
+                : 'Your life, your legends, your next move.'
       }
       onClose={onClose}
     >
@@ -223,6 +269,25 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
               ))}
             </select>
           </Field>
+          {game.settings.commander && (
+            <DeckImport
+              disabled={!manage || saving}
+              onImport={(imported) => {
+                setCommanderDrafts((current) => ({
+                  ...current,
+                  ...Object.fromEntries(
+                    commanders
+                      .slice(0, imported.length)
+                      .map((commander, index) => [
+                        commander.id,
+                        { label: imported[index].name, card: imported[index].card },
+                      ]),
+                  ),
+                }));
+                setSaveStatus('Deck commander filled in. Save changes to keep it.');
+              }}
+            />
+          )}
           {commanders.map((commander, index) => {
             const selection = commanderDrafts[commander.id] ?? {
               label: commander.label,
@@ -386,6 +451,40 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
           </section>
         </>
       )}
+      {(game.settings.markerTrackers.includes('monarch') ||
+        game.settings.markerTrackers.includes('initiative')) && (
+        <section className="detail-section">
+          <h3>
+            <Icon name="crown" />
+            Table markers
+          </h3>
+          <div className="marker-actions">
+            {(['monarch', 'initiative'] as const)
+              .filter((marker) => game.settings.markerTrackers.includes(marker))
+              .map((marker) => {
+                const held = game.markers[marker] === playerId;
+                return (
+                  <button
+                    key={marker}
+                    className={held ? 'selected' : 'secondary'}
+                    aria-pressed={held}
+                    disabled={disabled || pending > 0}
+                    onClick={() => void act({ type: 'marker', marker, playerId: held ? null : playerId })}
+                  >
+                    {marker === 'monarch'
+                      ? held
+                        ? '♛ The monarch · give it up'
+                        : '♛ Become the monarch'
+                      : held
+                        ? '◆ Has the initiative · give it up'
+                        : '◆ Take the initiative'}
+                  </button>
+                );
+              })}
+          </div>
+          <p className="hint">One player holds each marker. Taking it moves it from whoever had it.</p>
+        </section>
+      )}
       {game.settings.counters.length > 0 && (
         <section className="detail-section">
           <h3>Manual counters</h3>
@@ -422,6 +521,64 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
           Only changes the view on this device. Flipping a seat turns off automatic layout. Player sheets stay
           upright.
         </p>
+        <div className="seat-background">
+          <h4>Seat background</h4>
+          <p className="hint">
+            Any card’s art can sit behind this seat in place of the commander. Everyone at the table sees it.
+          </p>
+          <CommanderInput
+            label="Background card"
+            value={backdrop?.label ?? player.playmat?.name ?? ''}
+            card={backdrop ? backdrop.card : (player.playmat ?? null)}
+            disabled={!manage || pending > 0}
+            onChange={(label, card) => {
+              setBackdropStatus('');
+              if (card) void saveBackdrop(card);
+              // “Remove artwork” reports the unchanged name with no card.
+              else if (player.playmat && !backdrop && label === player.playmat.name) void saveBackdrop(null);
+              else setBackdrop({ label, card: null });
+            }}
+          />
+          {backdropStatus && (
+            <p className="hint" role="status">
+              {backdropStatus}
+            </p>
+          )}
+          <div className="seat-background-photo">
+            {photo && <img src={photo} alt={`${player.name}’s seat photo`} />}
+            <label className="file-label">
+              {photo ? 'Change photo' : 'Or use your own photo'}
+              <input
+                aria-label="Seat background photo"
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (file)
+                    void seatPhoto(file)
+                      .then((image) => setPlaymatPhoto(player.name, image))
+                      .catch(report);
+                }}
+              />
+            </label>
+            {photo && (
+              <button className="text-button" onClick={() => void setPlaymatPhoto(player.name, null)}>
+                Remove photo
+              </button>
+            )}
+          </div>
+          <p className="hint">
+            A photo stays on this device only and follows this player’s name. It is never uploaded.
+          </p>
+        </div>
+        <button
+          className="secondary full"
+          onClick={() => void saveRegular(savedFromGame(game, playerId)).catch(report)}
+        >
+          Save to my regulars
+        </button>
+        <p className="hint">Saves this name, color, commanders and background for one-tap setup next time.</p>
         {commanders.some((commander) => commander.card) && (
           <div className="artwork-framing">
             <h4>Artwork framing on this device</h4>

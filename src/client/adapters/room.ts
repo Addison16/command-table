@@ -430,8 +430,8 @@ async function send(command: Command | AdminCommand, groupId?: string, track?: (
   const state = useApp.getState();
   if (!state.connected || !state.room || socket?.readyState !== WebSocket.OPEN)
     throw new Error('Reconnecting — changes paused. No new changes were queued.');
-  if (command.type === 'groupLife')
-    throw new Error('In shared rooms, each player records life changes on their own seat.');
+  if (command.type === 'groupLife' && state.room.hostId !== state.room.me.id)
+    throw new Error('Only the host can apply a group life change in a shared room.');
   if (
     [
       'adjust',
