@@ -107,10 +107,28 @@ describe('time on turns', () => {
     expect(action(again, { type: 'rematch' }, 700_000).turnTime).toBeUndefined();
     expect(createRecap(start(), 5000).turns).toBeUndefined();
   });
+  it('counts nothing while turn tracking is off', () => {
+    // Archenemy gives the archenemy the first turn even when turns are not tracked.
+    const setup = defaultSetup(3);
+    setup.settings.preset = 'Archenemy';
+    setup.seats[0].archenemy = true;
+    const game = createGame(setup, newId, 1000);
+    expect(game.turn.playerId).toBe(game.order[0]);
+    expect(createRecap(action(game, { type: 'end' }, 900_000), 900_000).turns).toBeUndefined();
+    expect(turnShares(game, 900_000)).toEqual([]);
+    // Switching tracking off closes the interval; switching it on starts a fresh one.
+    let g = action(game, { type: 'turnTracking', enabled: true }, 100_000);
+    g = action(g, { type: 'turnTracking', enabled: false }, 130_000);
+    expect(g.turnTime).toEqual({ [game.order[0]]: 30_000 });
+    expect(turnShares(g, 500_000).map((share) => share.ms)).toEqual([30_000, 0]);
+    g = action(g, { type: 'turnTracking', enabled: true }, 600_000);
+    expect(action(g, { type: 'end' }, 610_000).turnTime).toEqual({ [game.order[0]]: 40_000 });
+  });
   it('adds a shared turn to the side that took it', () => {
     const game = createGame(twoHeadedGiantSetup(), newId, 1000);
     const [a, , c] = game.order;
-    let g = action(game, { type: 'turn', playerId: a, advance: false }, 1000);
+    let g = action(game, { type: 'turnTracking', enabled: true }, 1000);
+    g = action(g, { type: 'turn', playerId: a, advance: false }, 1000);
     g = action(g, { type: 'turn', playerId: c, advance: true }, 41_000);
     const shares = turnShares(g, 51_000);
     expect(shares.map((share) => share.ms)).toEqual([40_000, 10_000]);
