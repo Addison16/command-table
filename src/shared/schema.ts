@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { commanderCardSchema } from './cards.js';
 import { isSchemeId, schemeCards, schemeSetIds } from './schemes.js';
+import { isPlaneId, planarFaces, planeSetIds, PLANE_COUNT } from './planes.js';
 
 export const PROTOCOL = 1;
 export const LIMIT = 999_999;
@@ -13,12 +14,22 @@ export const counterKey = z
   .min(1)
   .max(30)
   .refine((s) => !['__proto__', 'prototype', 'constructor'].includes(s), 'Reserved counter name');
+/** Optional per-player counters offered in Utilities. Any other short name works too. */
+export const counterPresets = [
+  'Energy',
+  'Experience',
+  'Rad',
+  'Tickets',
+  'The Ring',
+  'City’s blessing',
+] as const;
+export const markerKinds = ['monarch', 'initiative', 'dayNight'] as const;
 export const palettes = ['ivory', 'blue', 'violet', 'ember', 'green', 'teal', 'rose', 'copper'] as const;
 const int = z.number().int().min(0).max(LIMIT);
 const life = z.number().int().min(-LIMIT).max(LIMIT);
 export const settingsSchema = z
   .strictObject({
-    preset: z.enum(['Commander', '20-life game', 'Archenemy', 'Custom']),
+    preset: z.enum(['Commander', '20-life game', 'Archenemy', 'Two-Headed Giant', 'Custom']),
     startingLife: life,
     poison: z.boolean(),
     commander: z.boolean(),
@@ -26,7 +37,7 @@ export const settingsSchema = z
     poisonThreshold: int.min(1),
     commanderThreshold: int.min(1),
     counters: z.array(counterKey).max(12),
-    markerTrackers: z.array(z.enum(['monarch', 'initiative'])).max(2),
+    markerTrackers: z.array(z.enum(markerKinds)).max(3),
     /** Present only in Archenemy games: the lone villain's starting life. */
     archenemyLife: life.optional(),
   })
@@ -47,6 +58,9 @@ export const setupSchema = z
             commanders: z.array(commanderNameSchema).min(1).max(2),
             commanderCards: z.array(commanderCardSchema.nullable()).min(1).max(2).optional(),
             archenemy: z.boolean().optional(),
+            /** Two-Headed Giant: seats with the same number share life, poison and a turn. */
+            team: z.number().int().min(0).max(3).optional(),
+            playmat: commanderCardSchema.optional(),
           })
           .strict()
           .refine((seat) => !seat.commanderCards || seat.commanderCards.length === seat.commanders.length, {
@@ -68,6 +82,22 @@ export const setupSchema = z
         message: 'Archenemy needs at least two players: the archenemy and a team.',
         path: ['seats'],
       });
+    const teamed = setup.seats.filter((seat) => seat.team !== undefined);
+    if (teamed.length) {
+      const sizes = new Map<number, number>();
+      for (const seat of teamed) sizes.set(seat.team!, (sizes.get(seat.team!) ?? 0) + 1);
+      if (
+        villains ||
+        teamed.length !== setup.seats.length ||
+        sizes.size < 2 ||
+        [...sizes.values()].some((size) => size !== 2)
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Two-Headed Giant needs an even number of players in teams of two.',
+          path: ['seats'],
+        });
+    }
   });
 export type Setup = z.infer<typeof setupSchema>;
 export const playerSchema = z
@@ -79,6 +109,8 @@ export const playerSchema = z
     poison: int,
     counters: z.record(counterKey, int),
     eliminated: z.boolean(),
+    /** Any card's art as this seat's background, in place of the commander art. */
+    playmat: commanderCardSchema.optional(),
   })
   .strict();
 export const commanderSchema = z
@@ -93,7 +125,7 @@ export const commanderSchema = z
 export const rollSchema = z
   .strictObject({
     id: idSchema,
-    kind: z.enum(['dice', 'coin', 'first', 'd20-each']),
+    kind: z.enum(['dice', 'coin', 'first', 'd20-each', 'opponent']),
     sides: z.number().int().min(2).max(100),
     values: z.array(int).max(20),
     candidates: z.array(idSchema).max(8),
@@ -133,6 +165,8 @@ const frameSchema = z.strictObject({
   summary: z.string().max(250),
   revision: z.number().int().nonnegative(),
 });
+export const planeIdSchema = z.string().max(60).refine(isPlaneId, 'Unknown plane');
+export const MAX_LIFE_LOG = 240;
 export const gameSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -143,8 +177,17 @@ export const gameSchema = z
     players: z.record(idSchema, playerSchema),
     commanders: z.record(idSchema, commanderSchema),
     damageReceived: z.record(idSchema, z.record(idSchema, int)),
-    markers: z.strictObject({ monarch: idSchema.nullable(), initiative: idSchema.nullable() }),
-    turn: z.strictObject({ playerId: idSchema.nullable(), number: int }),
+    markers: z.strictObject({
+      monarch: idSchema.nullable(),
+      initiative: idSchema.nullable(),
+      dayNight: z.enum(['day', 'night']).nullable().optional(),
+    }),
+    /** `startedAt` times the current turn. Absent in saves from before the turn clock. */
+    turn: z.strictObject({
+      playerId: idSchema.nullable(),
+      number: int,
+      startedAt: z.number().int().nonnegative().optional(),
+    }),
     timer: z.strictObject({
       startedAt: z.number().int(),
       pausedAt: z.number().int().nullable(),
@@ -168,6 +211,26 @@ export const gameSchema = z
         /** The most recently revealed scheme from the deck. */
         revealed: schemeIdSchema.nullable().optional(),
         sets: z.array(z.enum(schemeSetIds)).min(1).max(schemeSetIds.length).optional(),
+      })
+      .optional(),
+    /** Two-Headed Giant: each team shares one life total, poison total and turn. */
+    teams: z.array(z.array(idSchema).min(2).max(2)).min(2).max(4).optional(),
+    /** The winners the table recorded. Empty with `draw` for a drawn game. */
+    result: z.strictObject({ winners: z.array(idSchema).max(8), draw: z.boolean().optional() }).optional(),
+    /** Life totals in seat order after each change, for the recap graph. */
+    lifeLog: z
+      .array(z.strictObject({ t: z.number().int().nonnegative(), l: z.array(life).min(1).max(8) }))
+      .max(MAX_LIFE_LOG)
+      .optional(),
+    /** Planechase: a shared planar deck that cycles from `position`. */
+    planechase: z
+      .strictObject({
+        deck: z.array(planeIdSchema).min(1).max(PLANE_COUNT),
+        position: int,
+        current: planeIdSchema.nullable(),
+        sets: z.array(z.enum(planeSetIds)).min(1).max(planeSetIds.length),
+        die: z.enum(planarFaces).nullable(),
+        rolls: int,
       })
       .optional(),
   })
@@ -195,6 +258,17 @@ export const gameSchema = z
     if (g.rolls.some((roll) => roll.playerId && !g.players[roll.playerId]))
       invalid('Invalid dice player reference');
     if (g.archenemy && !g.players[g.archenemy.playerId]) invalid('Invalid archenemy');
+    if (g.teams) {
+      const members = g.teams.flat();
+      if (
+        g.archenemy ||
+        members.length !== g.order.length ||
+        new Set(members).size !== members.length ||
+        members.some((id) => !g.players[id])
+      )
+        invalid('Invalid teams');
+    }
+    if (g.result?.winners.some((id) => !g.players[id])) invalid('Invalid winner');
     const roots = [
       'players',
       'commanders',
@@ -206,6 +280,8 @@ export const gameSchema = z
       'status',
       'endedAt',
       'archenemy',
+      'result',
+      'planechase',
     ];
     if ([...g.undo, ...g.redo].some((f) => f.changes.some((c) => !roots.includes(c.path[0]))))
       invalid('Invalid undo fields');
@@ -261,6 +337,8 @@ export const commandSchema = z.discriminatedUnion('type', [
       )
       .min(1)
       .max(2),
+    /** null removes the seat background; leaving it out keeps the current one. */
+    playmat: commanderCardSchema.nullable().optional(),
   }),
   z.strictObject({
     type: z.literal('commanderName'),
@@ -274,6 +352,24 @@ export const commandSchema = z.discriminatedUnion('type', [
     marker: z.enum(['monarch', 'initiative']),
     playerId: idSchema.nullable(),
   }),
+  z.strictObject({ type: z.literal('dayNight'), value: z.enum(['day', 'night']).nullable() }),
+  z
+    .strictObject({
+      type: z.literal('declareWinner'),
+      winners: z.array(idSchema).max(8),
+      draw: z.boolean().optional(),
+    })
+    .refine((command) => new Set(command.winners).size === command.winners.length, {
+      message: 'Choose each winner only once.',
+      path: ['winners'],
+    }),
+  z.strictObject({
+    type: z.literal('shufflePlanes'),
+    sets: z.array(z.enum(planeSetIds)).min(1).max(planeSetIds.length),
+  }),
+  z.strictObject({ type: z.literal('planeswalk') }),
+  z.strictObject({ type: z.literal('planarDie') }),
+  z.strictObject({ type: z.literal('endPlanechase') }),
   z.strictObject({ type: z.literal('turn'), playerId: idSchema.nullable(), advance: z.boolean() }),
   z.strictObject({ type: z.literal('turnTracking'), enabled: z.boolean() }),
   z.strictObject({
@@ -298,7 +394,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('trackers'),
     counters: z.array(counterKey).max(12),
-    markerTrackers: z.array(z.enum(['monarch', 'initiative'])).max(2),
+    markerTrackers: z.array(z.enum(markerKinds)).max(3),
   }),
   z.strictObject({ type: z.literal('end') }),
   z.strictObject({ type: z.literal('reopen') }),
@@ -307,7 +403,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('redo') }),
   z.strictObject({
     type: z.literal('roll'),
-    kind: z.enum(['dice', 'coin', 'first', 'd20-each']),
+    kind: z.enum(['dice', 'coin', 'first', 'd20-each', 'opponent']),
     sides: z.union([
       z.literal(4),
       z.literal(6),
@@ -355,6 +451,7 @@ export const adminSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('lock'), locked: z.boolean() }),
   z.strictObject({ type: z.literal('policy'), everyoneEdits: z.boolean() }),
   z.strictObject({ type: z.literal('rotateCode') }),
+  z.strictObject({ type: z.literal('spectators'), enabled: z.boolean() }),
 ]);
 export type AdminCommand = z.infer<typeof adminSchema>;
 export const envelopeSchema = z
@@ -375,7 +472,7 @@ export type Member = {
   seatId: string | null;
   requestedSeat: string | null;
   seatProfile?: SeatProfile;
-  status: 'pending' | 'approved' | 'rejected' | 'seat-taken' | 'revoked';
+  status: 'pending' | 'approved' | 'rejected' | 'seat-taken' | 'revoked' | 'spectator';
   connected?: boolean;
 };
 export type RoomView = {
@@ -386,7 +483,7 @@ export type RoomView = {
   hostId: string;
   me: Member;
   members: Member[];
-  seats: { id: string; name: string; taken: boolean; archenemy?: boolean }[];
+  seats: { id: string; name: string; taken: boolean; archenemy?: boolean; team?: number }[];
   commanderEnabled?: boolean;
   locked: boolean;
   everyoneEdits: boolean;
@@ -397,6 +494,11 @@ export type RoomView = {
   code?: string;
   joinUrl?: string;
   undoRoomRevision?: number;
+  /** True right after this member's own undo, while that action can still be redone. */
+  canRedo?: boolean;
+  /** Host only: the read-only spectator link, when spectators are allowed. */
+  watchUrl?: string;
+  spectators?: number;
 };
 export type Receipt = { operationId: string; revision: number; gameId: string; ok: boolean; error?: string };
 export const recentRoomSchema = z.object({

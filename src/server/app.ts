@@ -13,11 +13,18 @@ import { readConfig, type Config } from './config.js';
 import { openDatabase } from './database.js';
 import { csrfFor, hash, HttpError, RoomService, validCsrf } from './service.js';
 import { cardLookup, CardLookupError, type CardLookupService } from './cards.js';
+import { deckLookup, type DeckLookupService } from './decks.js';
 import { TrafficBudget } from './traffic.js';
 import { Operations, errorKind } from './operations.js';
 
 export async function buildApp(
-  options: { config?: Config; filename?: string; now?: () => number; cards?: CardLookupService } = {},
+  options: {
+    config?: Config;
+    filename?: string;
+    now?: () => number;
+    cards?: CardLookupService;
+    decks?: DeckLookupService;
+  } = {},
 ) {
   const config = options.config ?? readConfig();
   const filename = options.filename ?? join(config.dataDir, 'mtg-util.sqlite');
@@ -144,6 +151,9 @@ export async function buildApp(
   app.get('/api/cards/rulings', cardRoute(30), async (req) =>
     cards.rulings(z.object({ id: idSchema }).parse(req.query).id),
   );
+  // A deck link is turned into a fixed Archidekt or Moxfield API address; only commander names come back.
+  const decks = options.decks ?? deckLookup;
+  app.get('/api/cards/deck', cardRoute(12), async (req) => decks.commanders(cardQuery.parse(req.query).q));
   app.post(
     '/api/session',
     { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
