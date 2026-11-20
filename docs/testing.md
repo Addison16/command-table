@@ -6,7 +6,7 @@ Entries record results and deployment state at the time of each check; historica
 
 This source update adds the items from the November review: faster long holds, host group life in rooms, keyboard shortcuts, a random opponent picker, a life graph in the recap, read-only spectator links, redo after your own undo in rooms, an in-app QR scanner, recorded winners with browser-local playgroup stats, saved players, optional trackers with Day/Night, a per-turn clock, Two-Headed Giant, Planechase, any-card lookup, seat backgrounds and commander import from deck links. SQLite moves to schema 4 (`watch_code`).
 
-ESLint, Prettier, TypeScript, the production build and all **289 unit/integration checks across 20 files** pass. E2E_RESULT
+ESLint, Prettier, TypeScript, the production build and all **289 unit/integration checks across 20 files** pass. The Chromium phone browser suite ran **126 cases**: 125 passed and the production offline case kept its existing environment guard. It includes eight new cases for Two-Headed Giant, optional trackers and the random opponent, Planechase, recorded winners and stats, keyboard shortcuts, card lookup, spectator links and room redo, with automated accessibility checks on the new sheets.
 
 The WebKit "dice bounce" failure on main was traced from its CI log to the adaptive quality change clearing the canvas without repainting it; the canvas now repaints after a resize and the test polls for the changed frame. WebKit is not installed in the development sandbox, so that fix is confirmed only by the hosted checks. Camera scanning, device photos and deck-site availability were not exercised on physical devices. Moxfield answered automated requests with 403 during development; the app reports that and asks for the commander name.
 
