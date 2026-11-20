@@ -93,6 +93,20 @@ export function statChange(
   return rematch && wasPlayed(previous) ? { record: previous } : {};
 }
 
+/** Fold records exported from another device into this one. Games already here are kept as they are. */
+export function mergeStats(existing: StatRecord[], incoming: unknown) {
+  const known = new Set(existing.map((record) => record.id));
+  const added: StatRecord[] = [];
+  for (const entry of Array.isArray(incoming) ? incoming.slice(0, 2000) : []) {
+    const parsed = statRecordSchema.safeParse(entry);
+    if (!parsed.success || known.has(parsed.data.id)) continue;
+    known.add(parsed.data.id);
+    added.push(parsed.data);
+  }
+  const records = [...existing, ...added].sort((a, b) => b.endedAt - a.endedAt).slice(0, MAX_STAT_RECORDS);
+  return { records, added: records.filter((record) => added.includes(record)).length };
+}
+
 export type Tally = { name: string; games: number; wins: number };
 const tally = (rows: Map<string, Tally>, name: string, won: boolean) => {
   const key = name.trim().toLowerCase();

@@ -8,6 +8,7 @@ import { PlayerNameInput } from '../components/PlayerNameInput.js';
 import { TrackerOptions } from './Trackers.js';
 import { SavedPlayerSelect } from './SavedPlayers.js';
 import { DeckImport, type ImportedCommander } from './DeckImport.js';
+import { shuffleSeating } from './seating.js';
 import type { SavedPlayer } from '../storage/repository.js';
 import '../styles/archenemy.css';
 export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose: () => void }) {
@@ -431,6 +432,16 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
                 </div>
               ))}
             </div>
+            <button
+              type="button"
+              className="secondary full"
+              disabled={busy}
+              onClick={() => setSetup((s) => ({ ...s, seats: shuffleSeating(s.seats) }))}
+            >
+              <Icon name="dice" />
+              Shuffle seating
+            </button>
+            <p className="hint">Deals these players into a random seating order.</p>
           </details>
         )}
         <details>

@@ -50,6 +50,8 @@ const RecordWinner = lazy(() => import('../features/GameMenu.js').then((m) => ({
 const StatsSheet = lazy(() => import('../features/Stats.js').then((m) => ({ default: m.StatsSheet })));
 const CardLookup = lazy(() => import('../features/CardLookup.js').then((m) => ({ default: m.CardLookup })));
 const Planechase = lazy(() => import('../features/Planechase.js').then((m) => ({ default: m.Planechase })));
+const Dungeons = lazy(() => import('../features/Dungeons.js').then((m) => ({ default: m.Dungeons })));
+const TurnTools = lazy(() => import('../features/TurnTools.js').then((m) => ({ default: m.TurnTools })));
 const HistorySheet = lazy(() => import('../features/GameMenu.js').then((m) => ({ default: m.HistorySheet })));
 const Settings = lazy(() => import('../features/Settings.js').then((m) => ({ default: m.Settings })));
 const JoinSheet = lazy(() => import('../features/Rooms.js').then((m) => ({ default: m.JoinSheet })));
@@ -673,6 +675,8 @@ export function App() {
           {sheet === 'stats' && <StatsSheet onClose={close} />}
           {sheet === 'card-lookup' && <CardLookup onClose={close} />}
           {sheet === 'planechase' && game && <Planechase onClose={close} />}
+          {sheet === 'dungeons' && game && <Dungeons onClose={close} />}
+          {sheet === 'turn-tools' && game && <TurnTools onClose={close} />}
           {sheet === 'settings' && <Settings onClose={close} />}
           {sheet === 'layout' && <TableLayout onClose={close} />}
           {presentation && state.screen === 'board' && (

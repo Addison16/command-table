@@ -23,7 +23,7 @@ function frameAllowed(
     if (root === 'planechase') return !!seatId || host;
     if (root === 'markers')
       return host || (!!seatId && (id === 'dayNight' || frame.changes.every((c) => c.after === seatId)));
-    return host && ['turn', 'timer', 'settings', 'status', 'endedAt', 'result'].includes(root);
+    return host && ['turn', 'turnTime', 'timer', 'settings', 'status', 'endedAt', 'result'].includes(root);
   });
 }
 /** Undo must obey current ownership, including frames saved by older room versions. */

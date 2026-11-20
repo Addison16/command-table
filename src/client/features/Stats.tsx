@@ -66,6 +66,32 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
     else delete next.draw;
     change({ record: next });
   };
+  const importFile = (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 2_000_000) return report(new Error('Maximum stats file size is 2 MB'));
+    void file
+      .text()
+      .then((text) => repository.importStats(JSON.parse(text)))
+      .then((added) => {
+        useApp.setState((s) => ({ statsVersion: s.statsVersion + 1 }));
+        notify(added ? `${added} ${added === 1 ? 'game' : 'games'} added` : 'No new games in that file');
+      })
+      .catch(() => report(new Error('That file is not a Command Table stats export.')));
+  };
+  const importStats = (
+    <label className="file-label">
+      Import stats from another device
+      <input
+        aria-label="Import stats from another device"
+        type="file"
+        accept=".json,application/json"
+        onChange={(event) => {
+          importFile(event.target.files?.[0]);
+          event.target.value = '';
+        }}
+      />
+    </label>
+  );
   return (
     <Sheet
       title="Playgroup stats"
@@ -82,6 +108,7 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
             End a game, or start a rematch, and it is counted here. Use “Record winner” in the game menu when
             someone wins another way.
           </span>
+          {importStats}
         </div>
       ) : (
         <>
@@ -195,6 +222,7 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
             <Icon name="download" />
             Export stats
           </button>
+          {importStats}
           <button
             className="text-button full"
             onClick={async () => {

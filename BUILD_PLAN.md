@@ -183,6 +183,10 @@ Named manual counters (Energy, Experience, Rad, Tickets, The Ring, City’s bles
 
 **Planechase** stores a shared `planechase` deck of plane IDs with a position, current plane, last die face and rolls this turn. `shufflePlanes` and `endPlanechase` are host table controls; `planarDie` and `planeswalk` belong to any seated player. Die faces are rolled by the reducer's caller the same way dice are (server-side in rooms). Plane names live in `src/shared/planeIndex.ts`; rules text and Scryfall IDs in `src/shared/planeCards.ts` load on demand. Regenerate both with `node scripts/generate-planes.mjs`.
 
+**Dungeons**: a player may carry `dungeon` (`id`, room position) and `dungeonsCompleted`. `venture` enters a dungeon, moves to a room the current one leads to, or completes the dungeon from its last room; `leaveDungeon` removes the marker. Both are own-seat commands. Room data lives in `src/shared/dungeons.ts`; regenerate it with `node scripts/generate-dungeons.mjs`.
+
+`turnTime` banks the milliseconds each turn holder has spent on their turns (pauses excluded) when the turn passes or the game ends; the recap groups it by side. The storm count and mana pool are a device-local scratchpad in session storage, not game state.
+
 `declareWinner` stores `result` (winners or a draw) on the game. `lifeLog` keeps up to 240 life snapshots for the recap graph. Finished games are summarized into a browser-local stats store; nothing is sent to the server.
 
 ### Undo, history, ending and rematches
@@ -449,7 +453,7 @@ Record each verification with its date, counts, failures and deployment state in
 
 ## 13. Not built: later additions
 
-Accounts and cross-device personal history; cloud sync of local games; full deck-list integrations beyond importing a commander; team formats beyond Archenemy and Two-Headed Giant; server-side or cross-device statistics; advanced mana, storm and phase tools; dungeon assistance; and multi-instance or network-filesystem hosting.
+Accounts and cross-device personal history; cloud sync of local games; full deck-list integrations beyond importing a commander; team formats beyond Archenemy and Two-Headed Giant; server-side or cross-device statistics; shared mana pools and phase tools; and multi-instance or network-filesystem hosting.
 
 Keep stable IDs, the shared domain, versioned storage and clear membership boundaries so these remain possible. Do not build speculative frameworks for them.
 

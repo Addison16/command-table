@@ -173,7 +173,7 @@ export function Utilities({
       <section className="detail-section">
         <h3>
           <Icon name="card" />
-          Cards & planes
+          Cards, planes & turn tools
         </h3>
         <button className="secondary full" onClick={() => open('card-lookup')}>
           Look up any card
@@ -183,7 +183,16 @@ export function Utilities({
             ? `Planechase · ${planeEntry(game.planechase.current)?.name ?? 'planar deck'}`
             : 'Planechase'}
         </button>
-        <p className="hint">Read a card’s text and rulings, or bring out a shared planar deck and die.</p>
+        <button className="secondary full" onClick={() => open('dungeons')}>
+          Dungeons
+        </button>
+        <button className="secondary full" onClick={() => open('turn-tools')}>
+          Storm count & mana pool
+        </button>
+        <p className="hint">
+          Read a card’s text and rulings, bring out a shared planar deck and die, venture into a dungeon, or
+          count spells and floating mana for a big turn.
+        </p>
       </section>
       <section className="detail-section">
         <h3>

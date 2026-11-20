@@ -161,6 +161,42 @@ describe('authoritative room transactions', () => {
     expect(f.svc.view(f.room.id, f.guest.hash).canRedo).toBeUndefined();
     expect(f.run(f.guest.hash, { type: 'redo' }).receipt.ok).toBe(false);
   });
+  it('lets the host undo a turn they passed after time was banked for it', () => {
+    const f = fixture();
+    f.approve();
+    const [first, second] = f.room.seats.map((seat) => seat.id);
+    f.run(f.host.hash, { type: 'turn', playerId: first, advance: false });
+    f.advance(30_000);
+    expect(f.run(f.host.hash, { type: 'turn', playerId: second, advance: true }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.turnTime).toEqual({ [first]: 30_000 });
+    expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(false);
+    expect(f.run(f.host.hash, { type: 'undo' }).receipt.ok).toBe(true);
+    const game = f.svc.view(f.room.id, f.host.hash).game!;
+    expect(game.turn.playerId).toBe(first);
+    expect(game.turnTime?.[first]).toBeUndefined();
+  });
+  it('lets each player move only their own dungeon marker', () => {
+    const f = fixture();
+    f.approve();
+    const mine = f.room.seats[0].id,
+      theirs = f.room.seats[1].id;
+    const enter = (playerId: string): Command => ({
+      type: 'venture',
+      playerId,
+      dungeon: 'tomb-of-annihilation',
+    });
+    expect(f.run(f.guest.hash, enter(theirs)).receipt.ok).toBe(false);
+    expect(f.run(f.host.hash, enter(mine)).receipt.ok).toBe(false);
+    expect(f.run(f.guest.hash, enter(mine)).receipt.ok).toBe(true);
+    expect(f.run(f.guest.hash, { type: 'venture', playerId: mine, room: 3 }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.other.hash).game!.players[mine].dungeon).toEqual({
+      id: 'tomb-of-annihilation',
+      room: 3,
+    });
+    expect(f.run(f.other.hash, { type: 'leaveDungeon', playerId: mine }).receipt.ok).toBe(false);
+    expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.guest.hash).game!.players[mine].dungeon!.room).toBe(0);
+  });
   it('gives spectators a read-only view through a separate link the host can close', () => {
     const f = fixture();
     f.approve();
