@@ -20,6 +20,8 @@ test('home, board and player dialog meet automated accessibility checks', async 
   await details.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toBeVisible();
+  // The details load on demand: scan the finished sheet, not the placeholder it replaces.
+  await expect(page.getByLabel('Exact life', { exact: true })).toBeVisible();
   await check();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
