@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { commanderCardSchema } from './cards.js';
 import { isSchemeId, schemeCards, schemeSetIds } from './schemes.js';
+import { dungeonIds } from './dungeons.js';
 import { isPlaneId, planarFaces, planeSetIds, PLANE_COUNT } from './planes.js';
 
 export const PROTOCOL = 1;
@@ -111,6 +112,9 @@ export const playerSchema = z
     eliminated: z.boolean(),
     /** Any card's art as this seat's background, in place of the commander art. */
     playmat: commanderCardSchema.optional(),
+    /** Venture into the dungeon: where this player's marker is, by room position. */
+    dungeon: z.strictObject({ id: z.enum(dungeonIds), room: z.number().int().min(0).max(20) }).optional(),
+    dungeonsCompleted: int.optional(),
   })
   .strict();
 export const commanderSchema = z
@@ -222,6 +226,8 @@ export const gameSchema = z
       .array(z.strictObject({ t: z.number().int().nonnegative(), l: z.array(life).min(1).max(8) }))
       .max(MAX_LIFE_LOG)
       .optional(),
+    /** Milliseconds each turn holder has spent on their turns, while turns are tracked. */
+    turnTime: z.record(idSchema, z.number().int().nonnegative()).optional(),
     /** Planechase: a shared planar deck that cycles from `position`. */
     planechase: z
       .strictObject({
@@ -282,6 +288,7 @@ export const gameSchema = z
       'archenemy',
       'result',
       'planechase',
+      'turnTime',
     ];
     if ([...g.undo, ...g.redo].some((f) => f.changes.some((c) => !roots.includes(c.path[0]))))
       invalid('Invalid undo fields');
@@ -352,6 +359,15 @@ export const commandSchema = z.discriminatedUnion('type', [
     marker: z.enum(['monarch', 'initiative']),
     playerId: idSchema.nullable(),
   }),
+  z.strictObject({
+    type: z.literal('venture'),
+    playerId: idSchema,
+    /** Needed to enter a dungeon; ignored while the player is part-way through one. */
+    dungeon: z.enum(dungeonIds).optional(),
+    /** The room to move into, when the current room leads to more than one. */
+    room: z.number().int().min(0).max(20).optional(),
+  }),
+  z.strictObject({ type: z.literal('leaveDungeon'), playerId: idSchema }),
   z.strictObject({ type: z.literal('dayNight'), value: z.enum(['day', 'night']).nullable() }),
   z
     .strictObject({

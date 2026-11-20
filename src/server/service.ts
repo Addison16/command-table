@@ -593,6 +593,8 @@ export class RoomService {
           'editPlayer',
           'commanderName',
           'eliminate',
+          'venture',
+          'leaveDungeon',
           'scheme',
           'revealScheme',
           'shuffleSchemes',

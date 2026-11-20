@@ -14,6 +14,7 @@ import {
 } from './schema.js';
 import { nextSchemeIndex, schemeCard, schemeCards, shuffleSchemeDeck } from './schemes.js';
 import { planarFaces, planeEntry, shufflePlanarDeck } from './planes.js';
+import { dungeon } from './dungeons.js';
 
 export type Context = {
   id: string;
@@ -234,6 +235,7 @@ function core(g: Game) {
     damageReceived: g.damageReceived,
     markers: g.markers,
     turn: g.turn,
+    turnTime: g.turnTime,
     timer: g.timer,
     settings: g.settings,
     status: g.status,
@@ -282,6 +284,17 @@ function bounded(n: number, min = 0) {
   if (!Number.isSafeInteger(n) || n < min || n > LIMIT)
     throw new Error(`Use a whole number between ${min.toLocaleString()} and ${LIMIT.toLocaleString()}`);
   return n;
+}
+/** Add the turn that is ending to its holder's total. Time spent paused does not count. */
+function bankTurn(g: Game, now: number) {
+  const { playerId, startedAt } = g.turn;
+  if (!playerId || startedAt === undefined) return;
+  const end = g.timer.pausedAt ?? now;
+  const spent = Math.max(0, end - startedAt);
+  if (spent)
+    g.turnTime = { ...g.turnTime, [playerId]: Math.min(LIMIT * 1000, (g.turnTime?.[playerId] ?? 0) + spent) };
+  // Whatever happens next starts counting from here, so nothing is banked twice.
+  g.turn.startedAt = Math.max(startedAt, end);
 }
 /** One point per change in anyone's life. Quick runs of taps collapse into their last value. */
 function logLife(previous: Game, g: Game, now: number) {
@@ -495,6 +508,36 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
         ? `${p.name} ${c.marker === 'monarch' ? 'became the monarch' : 'took the initiative'}`
         : `${c.marker === 'monarch' ? 'The monarch' : 'The initiative'} was cleared`;
       break;
+    case 'venture': {
+      if (!p) throw new Error('Unknown player');
+      let at = p.dungeon ? dungeon(p.dungeon.id) : undefined;
+      const here = at && p.dungeon ? at.rooms[p.dungeon.room] : undefined;
+      if (at && here && !here.next.length) {
+        // The last room is behind them: the dungeon is complete and leaves the table.
+        p.dungeonsCompleted = bounded((p.dungeonsCompleted ?? 0) + 1);
+        delete p.dungeon;
+        summary = `${p.name} completed ${at.name}`;
+        at = undefined;
+        if (!c.dungeon) break;
+      }
+      if (!at || !here) {
+        const entered = dungeon(c.dungeon);
+        if (!entered) throw new Error('Choose a dungeon to enter');
+        p.dungeon = { id: entered.id, room: 0 };
+        summary = `${p.name} entered ${entered.name}: ${entered.rooms[0].name}`;
+        break;
+      }
+      const room = c.room ?? (here.next.length === 1 ? here.next[0] : undefined);
+      if (room === undefined || !here.next.includes(room)) throw new Error('Choose the next room');
+      p.dungeon = { id: at.id, room };
+      summary = `${p.name} ventured into ${at.rooms[room].name}`;
+      break;
+    }
+    case 'leaveDungeon':
+      if (!p?.dungeon) throw new Error('That player is not in a dungeon');
+      delete p.dungeon;
+      summary = `${p.name} left the dungeon`;
+      break;
     case 'dayNight':
       if (c.value) g.markers.dayNight = c.value;
       else delete g.markers.dayNight;
@@ -554,6 +597,7 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       break;
     case 'turn':
       if (p?.eliminated) throw new Error('Choose a player still in the game');
+      bankTurn(g, ctx.now);
       g.turn = {
         playerId: c.playerId,
         number: c.advance ? bounded(g.turn.number + 1) : c.playerId ? Math.max(1, g.turn.number) : 0,
@@ -587,6 +631,7 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       summary = 'Manual trackers updated';
       break;
     case 'end':
+      bankTurn(g, ctx.now);
       g.status = 'ended';
       g.endedAt = ctx.now;
       g.timer.pausedAt ??= ctx.now;
@@ -609,6 +654,8 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
         player.poison = 0;
         player.counters = {};
         player.eliminated = false;
+        delete player.dungeon;
+        delete player.dungeonsCompleted;
       }
       for (const cmdr of Object.values(g.commanders)) cmdr.casts = 0;
       g.damageReceived = {};
@@ -617,6 +664,7 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
         ? { playerId: g.archenemy.playerId, number: 1, startedAt: ctx.now }
         : { playerId: null, number: 0 };
       delete g.result;
+      delete g.turnTime;
       if (g.planechase) {
         const { sets } = g.planechase;
         if (ctx.planarDeck?.length)
