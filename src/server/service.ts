@@ -289,9 +289,17 @@ export class RoomService {
           403,
           'This guest identity was removed from the room. Ask the host for a new room or use a new browser identity and request approval.',
         );
-      if (existing) return r.id;
+      if (existing && (existing.status !== 'spectator' || spectator)) return r.id;
       if (r.locked && !spectator)
         throw new HttpError(403, 'The host has locked joining. Ask them to unlock the room.');
+      if (existing) {
+        // Someone who watched first and now presents the player invitation joins the lobby.
+        this.db
+          .prepare("UPDATE members SET status='pending', name=? WHERE id=?")
+          .run(nameSchema.parse(name), existing.id);
+        this.commitRoom(r, undefined, 'A guest joined the lobby', existing.id, randomUUID(), false);
+        return r.id;
+      }
       if (this.members(r.id).filter((m) => m.status !== 'revoked').length >= 40)
         throw new HttpError(
           409,

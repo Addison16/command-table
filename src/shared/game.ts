@@ -571,6 +571,12 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       if (c.action === 'pause' && g.timer.pausedAt === null) g.timer.pausedAt = ctx.now;
       if (c.action === 'resume' && g.timer.pausedAt !== null) {
         g.timer.pausedMs += Math.max(0, ctx.now - g.timer.pausedAt);
+        // The turn clock stops with the timer, so the pause is not part of the turn.
+        if (g.turn.startedAt !== undefined)
+          g.turn.startedAt = Math.min(
+            ctx.now,
+            g.turn.startedAt + Math.max(0, ctx.now - Math.max(g.timer.pausedAt, g.turn.startedAt)),
+          );
         g.timer.pausedAt = null;
       }
       summary = `Timer ${c.action === 'pause' ? 'paused' : 'resumed'}`;

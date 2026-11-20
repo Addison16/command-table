@@ -188,9 +188,21 @@ describe('authoritative room transactions', () => {
       { type: 'planarDie' },
     ] as (Command | AdminCommand)[])
       expect(f.run(watcher.hash, command).receipt.ok).toBe(false);
+    // Watching first does not stop someone from joining properly, once the room is unlocked.
+    expect(() => f.svc.join(watcher.hash, f.room.code!, 'Viewer')).toThrow();
+    expect(f.svc.join(watcher.hash, code, 'Viewer').me.status).toBe('spectator');
+    f.run(f.host.hash, { type: 'lock', locked: false });
+    expect(f.svc.join(watcher.hash, f.room.code!, 'Viewer').me.status).toBe('pending');
+    expect(f.svc.view(f.room.id, f.host.hash).spectators).toBe(0);
+    expect(
+      f.run(watcher.hash, { type: 'requestSeat', playerId: seat, profile: { name: 'Viewer' } }).receipt.ok,
+    ).toBe(true);
+    const second = f.session();
+    f.svc.join(second.hash, code, 'Second');
     expect(f.run(f.host.hash, { type: 'spectators', enabled: false }).receipt.ok).toBe(true);
     expect(f.svc.view(f.room.id, f.host.hash).watchUrl).toBeUndefined();
-    expect(() => f.svc.view(f.room.id, watcher.hash)).toThrow();
+    expect(f.svc.view(f.room.id, watcher.hash).me.status).toBe('pending');
+    expect(() => f.svc.view(f.room.id, second.hash)).toThrow();
     expect(() => f.svc.join(f.session().hash, code, 'Late')).toThrow();
   });
   it('shares a planar deck that any seated player can roll for and walk', () => {

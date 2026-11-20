@@ -210,6 +210,12 @@ describe('Planechase and table markers', () => {
     const next = action(chaos, { type: 'turn', playerId: game.order[1], advance: true });
     expect(next.planechase!.rolls).toBe(0);
     expect(next.turn.startedAt).toBe(2000);
+    // Time spent paused is not part of the turn.
+    const paused = action(next, { type: 'timer', action: 'pause' }, { now: 2010 });
+    const resumed = action(paused, { type: 'timer', action: 'resume' }, { now: 2310 });
+    expect(resumed.turn.startedAt).toBe(2300);
+    const during = action(paused, { type: 'turn', playerId: game.order[0], advance: true }, { now: 2100 });
+    expect(action(during, { type: 'timer', action: 'resume' }, { now: 2310 }).turn.startedAt).toBe(2310);
     expect(action(lap, { type: 'endPlanechase' }).planechase).toBeUndefined();
     expect(gameSchema.safeParse(lap).success).toBe(true);
   });
