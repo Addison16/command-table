@@ -350,8 +350,20 @@ export class Repository {
   }
   /** Add games exported from another device. Returns how many were new. */
   async importStats(incoming: unknown) {
-    const merged = mergeStats(await this.stats(), incoming);
-    if (merged.added) await this.put('stats', merged.records);
+    // One transaction, so a game recorded in another tab mid-import is not overwritten.
+    const tx = this.memory ? undefined : this.db!.transaction('records', 'readwrite');
+    const records = tx?.store ?? {
+      get: (key: string) => this.get(key),
+      put: (value: unknown, key: string) => this.put(key, value),
+    };
+    const stored = (await records.get('stats')) as unknown;
+    const existing = (Array.isArray(stored) ? stored : []).flatMap((entry) => {
+      const parsed = statRecordSchema.safeParse(entry);
+      return parsed.success ? [parsed.data] : [];
+    });
+    const merged = mergeStats(existing, incoming);
+    if (merged.added) await records.put(merged.records, 'stats');
+    await tx?.done;
     return merged.added;
   }
   /** Photos used as seat backgrounds on this device only, keyed by player name. */

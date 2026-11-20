@@ -6,7 +6,7 @@ Entries record results and deployment state at the time of each check; historica
 
 Adds the dungeon tracker (`venture`, `leaveDungeon`), per-player time on turns (`turnTime`), a life history, the device-local storm count and mana pool, shuffled seating and stats import. New game fields are optional, so earlier saves and rooms stay readable and no database migration is needed.
 
-ESLint, Prettier, TypeScript, the production build and all **299 unit/integration checks across 21 files** pass. The Chromium phone browser suite ran **130 cases**: 129 passed and the production offline case kept its existing environment guard. Four new cases cover the dungeon tracker, the storm count and mana pool, life history with time on turns, and shuffled seating with stats import, with automated accessibility checks on the new sheets. WebKit runs in the hosted checks.
+ESLint, Prettier, TypeScript, the production build and all **300 unit/integration checks across 21 files** pass. The Chromium phone browser suite ran **130 cases**: 129 passed and the production offline case kept its existing environment guard. Four new cases cover the dungeon tracker, the storm count and mana pool, life history with time on turns, and shuffled seating with stats import, with automated accessibility checks on the new sheets. WebKit runs in the hosted checks.
 
 This updates source without creating a release tag or publishing Docker images.
 

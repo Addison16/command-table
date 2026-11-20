@@ -165,6 +165,7 @@ describe('authoritative room transactions', () => {
     const f = fixture();
     f.approve();
     const [first, second] = f.room.seats.map((seat) => seat.id);
+    f.run(f.host.hash, { type: 'turnTracking', enabled: true });
     f.run(f.host.hash, { type: 'turn', playerId: first, advance: false });
     f.advance(30_000);
     expect(f.run(f.host.hash, { type: 'turn', playerId: second, advance: true }).receipt.ok).toBe(true);

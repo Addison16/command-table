@@ -288,7 +288,8 @@ function bounded(n: number, min = 0) {
 /** Add the turn that is ending to its holder's total. Time spent paused does not count. */
 function bankTurn(g: Game, now: number) {
   const { playerId, startedAt } = g.turn;
-  if (!playerId || startedAt === undefined) return;
+  // A turn only counts while the table is tracking turns.
+  if (!g.settings.turnTracking || !playerId || startedAt === undefined) return;
   const end = g.timer.pausedAt ?? now;
   const spent = Math.max(0, end - startedAt);
   if (spent)
@@ -608,6 +609,9 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       summary = `Turn ${g.turn.number}: ${p?.name ?? 'cleared'}`;
       break;
     case 'turnTracking':
+      // Time is counted only while tracking is on: close the interval, or open a fresh one.
+      if (!c.enabled) bankTurn(g, ctx.now);
+      else if (!g.settings.turnTracking && g.turn.playerId) g.turn.startedAt = ctx.now;
       g.settings.turnTracking = c.enabled;
       summary = `Turn tracking ${c.enabled ? 'enabled' : 'disabled'}`;
       break;

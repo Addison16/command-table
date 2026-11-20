@@ -6,7 +6,7 @@ export type TurnShare = { key: string; name: string; ms: number };
 export function turnShares(game: Game, now: number): TurnShare[] {
   const spent: Record<string, number> = { ...game.turnTime };
   const { playerId, startedAt } = game.turn;
-  if (game.status === 'active' && playerId && startedAt !== undefined)
+  if (game.status === 'active' && game.settings.turnTracking && playerId && startedAt !== undefined)
     spent[playerId] = (spent[playerId] ?? 0) + Math.max(0, (game.timer.pausedAt ?? now) - startedAt);
   const total = (ids: string[]) => ids.reduce((sum, id) => sum + (spent[id] ?? 0), 0);
   const sides: { key: string; name: string; ids: string[] }[] = game.teams
