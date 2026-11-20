@@ -45,8 +45,10 @@ test('dice bounce over the board and keep the first player hidden through a tie 
   await expect(page.locator('.winner-name')).toHaveCount(0);
   const canvas = page.locator('.dice-canvas');
   const firstFrame = await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
-  await page.waitForTimeout(450);
-  expect(await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL())).not.toBe(firstFrame);
+  // Slow engines lower the dice quality mid-roll, so wait for motion rather than one fixed moment.
+  await expect
+    .poll(() => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL()), { timeout: 4000 })
+    .not.toBe(firstFrame);
   if (info.project.name === 'chromium-phone')
     await page.screenshot({ path: 'docs/screenshots/dice-rolling.png' });
   await expect(page.getByText('Tied highest — rolling again…', { exact: true })).toBeVisible();

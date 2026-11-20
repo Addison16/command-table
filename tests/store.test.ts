@@ -131,7 +131,7 @@ describe('shared-room seat controls', () => {
     expect(store.canEdit(room.me.seatId!)).toBe(false);
   });
 
-  it('keeps cross-seat player saves and group effects from being submitted', async () => {
+  it('keeps cross-seat player saves and a guest’s group effects from being submitted', async () => {
     const { room } = await connectedRoom();
     const save = vi.fn(async () => true);
     store.registerRoom(
@@ -149,24 +149,26 @@ describe('shared-room seat controls', () => {
         commanders: [],
       }),
     ).toBe(false);
-    expect(
-      await store.saveGroupLife(
-        {
-          type: 'groupLife',
-          casterId: room.me.seatId!,
-          targetIds: [room.game!.order[1]],
-          loss: 3,
-        },
-        {
-          gameId: room.gameId,
-          revision: room.game!.revision,
-          mode: 'room',
-          roomId: room.id,
-          roomRevision: room.revision,
-        },
-      ),
-    ).toBe(false);
+    const effect = {
+      type: 'groupLife' as const,
+      casterId: room.me.seatId!,
+      targetIds: [room.game!.order[1]],
+      loss: 3,
+    };
+    const review = {
+      gameId: room.gameId,
+      revision: room.game!.revision,
+      mode: 'room' as const,
+      roomId: room.id,
+      roomRevision: room.revision,
+    };
+    // A guest cannot apply a group effect; only the host's is sent for confirmation.
+    store.useApp.setState({ room: { ...room, hostId: newId() } });
+    expect(await store.saveGroupLife(effect, review)).toBe(false);
     expect(save).not.toHaveBeenCalled();
+    store.useApp.setState({ room });
+    expect(await store.saveGroupLife(effect, review)).toBe(true);
+    expect(save).toHaveBeenCalledExactlyOnceWith(effect);
   });
 });
 

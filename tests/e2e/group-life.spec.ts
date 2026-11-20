@@ -206,10 +206,7 @@ test('a failed durable write preserves every total and locks direct retry until 
   expect(errors).toEqual([]);
 });
 
-test('room players and hosts cannot apply group effects to other players’ totals', async ({
-  page: host,
-  browser,
-}) => {
+test('only the room host can apply a group effect, and everyone sees it', async ({ page: host, browser }) => {
   const guestContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const guest = await guestContext.newPage();
   try {
@@ -224,13 +221,25 @@ test('room players and hosts cannot apply group effects to other players’ tota
     await host.getByRole('button', { name: 'Close Invite your table', exact: true }).click();
     await expect(guest.getByRole('button', { name: "Decrease Rowan's life", exact: true })).toBeEnabled();
     const before = await roomGame(host, room.id);
-    for (const device of [host, guest]) {
-      await device.getByRole('button', { name: 'Utilities', exact: true }).click();
-      await expect(device.getByRole('button', { name: 'Group life change', exact: true })).toBeDisabled();
-      await device.getByRole('button', { name: 'Close A little luck & magic', exact: true }).click();
-      for (const index of [0, 1, 2, 3]) await expect(device.getByTestId(`life-${index}`)).toHaveText('40');
-    }
+    await guest.getByRole('button', { name: 'Utilities', exact: true }).click();
+    await expect(guest.getByRole('button', { name: 'Group life change', exact: true })).toBeDisabled();
+    await guest.getByRole('button', { name: 'Close A little luck & magic', exact: true }).click();
     expect(await roomGame(host, room.id)).toEqual(before);
+    await host.getByRole('button', { name: 'Utilities', exact: true }).click();
+    await host.getByRole('button', { name: 'Group life change', exact: true }).click();
+    await host.getByRole('combobox', { name: 'Caster', exact: true }).selectOption({ index: 1 });
+    await host.getByRole('spinbutton', { name: 'Life lost per selected opponent', exact: true }).fill('3');
+    await host.getByRole('button', { name: /^Apply to/ }).click();
+    await expect(host.getByRole('dialog')).toHaveCount(0);
+    for (const device of [host, guest]) {
+      await expect(device.getByTestId('life-0')).toHaveText('40');
+      for (const index of [1, 2, 3]) await expect(device.getByTestId(`life-${index}`)).toHaveText('37');
+    }
+    // The whole effect is one action, and it is the host's to undo.
+    await expect(guest.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+    await host.getByRole('button', { name: 'Undo', exact: true }).click();
+    for (const device of [host, guest])
+      for (const index of [0, 1, 2, 3]) await expect(device.getByTestId(`life-${index}`)).toHaveText('40');
   } finally {
     await guestContext.close();
   }
