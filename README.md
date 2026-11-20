@@ -2,7 +2,7 @@
 
 A mobile-first companion for a physical Magic table. Track one to eight players on **One device**, or create a **Shared room** and invite friends by code, link, or QR. Players join in a browser with no accounts or client installation. Hosts run the app with Docker.
 
-Start with the [Docker installation](#docker) below to host on your own computer or server and receive app updates. See the [v0.3.2.1 release notes](https://github.com/Addison16/command-table/releases/tag/v0.3.2.1) for the latest GitHub release. The main branch also includes elimination and winner screens, physically simulated dice, coordinated table looks, artwork framing, and server reliability improvements; these updates await the next Docker release.
+Start with the [Docker installation](#docker) below to host on your own computer or server and receive app updates. See the [v0.4.0 release notes](docs/releases/v0.4.0.md) for what is new: Two-Headed Giant, Planechase, dungeons, playgroup stats, saved players, spectator links, simulated dice and more.
 
 **Source-available for noncommercial use:** free to use, modify, and share under the [PolyForm Noncommercial License 1.0.0](LICENSE). Commercial use is not licensed. See [licensing](#publication-and-project-scope) for the scope and earlier releases.
 
@@ -80,7 +80,7 @@ docker compose -p mtg-util -f compose.yaml ps
 
 The `latest` tag follows stable releases. Pull downloads the new image; `up -d` recreates the container with it while preserving the mounted data volume. Keep the same Compose project name, `.env`, volume and public origin. Do not use `down -v` when updating: it deletes the server data. Browser-local games remain in their browsers.
 
-Updates are applied when you run these commands or update through your Docker manager; selecting `latest` does not restart containers automatically. Players can tap **Save & update** when the browser update prompt appears. To stay on a fixed release, set `MTG_IMAGE` to a published version such as `ghcr.io/addison16/commandtable:0.2.0`, or to an image digest. See [backup, restore and updates](docs/deployment.md) for details.
+Updates are applied when you run these commands or update through your Docker manager; selecting `latest` does not restart containers automatically. Players can tap **Save & update** when the browser update prompt appears. To stay on a fixed release, set `MTG_IMAGE` to a published version such as `ghcr.io/addison16/commandtable:0.4.0`, or to an image digest. See [backup, restore and updates](docs/deployment.md) for details.
 
 ## Play
 
@@ -219,4 +219,4 @@ Commercial use is not granted, including resale, paid hosting, and use for comme
 
 The release workflow verifies the app, Chromium/WebKit journeys, offline updates, HTTPS/WebSockets, and native amd64/arm64 containers before publishing GHCR images and GitHub release downloads. Maintainers publish updates by bumping the package version and pushing a matching `vX.Y.Z` tag; see [publishing a release](docs/deployment.md#publishing-a-release).
 
-This is an independent manual tracker, not a Wizards of the Coast product or a rules engine. Accounts, card databases, team-format automation, and multi-server deployment are outside this release. [BUILD_PLAN.md](BUILD_PLAN.md) describes the product and implementation as built, including how it differs from the original specification.
+This is an independent manual tracker, not a Wizards of the Coast product or a rules engine. Accounts, a bundled card database, team formats beyond Archenemy and Two-Headed Giant, and multi-server deployment are outside this release. [BUILD_PLAN.md](BUILD_PLAN.md) describes the product and implementation as built, including how it differs from the original specification.
