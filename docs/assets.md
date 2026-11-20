@@ -30,6 +30,10 @@ Scryfall provides card metadata and its dedicated `art_crop` images. The app sea
 
 Archenemy scheme names and rules text in `src/shared/schemeCards.ts` were generated from Scryfall's oracle data (`type:scheme`) and belong to Wizards of the Coast. The scheme deck shows each card's Scryfall `art_crop` when online and keeps the text readable offline.
 
+Plane and phenomenon names, rules text and Scryfall IDs in `src/shared/planeIndex.ts` and `src/shared/planeCards.ts` were generated from Scryfall's oracle data by `scripts/generate-planes.mjs` and belong to Wizards of the Coast. Planechase shows each card's Scryfall art when online and keeps the text readable offline.
+
+The in-app QR scanner uses the browser's `BarcodeDetector` where available and otherwise loads [jsQR](https://github.com/cozmo/jsQR) (Apache-2.0) on demand. Deck links read public deck data from [Archidekt](https://archidekt.com); only the commander's name and Scryfall ID are used.
+
 The production service worker keeps a separate, bounded cache for viewed public art images; private game APIs are never cached. New searches and uncached images require internet access. Missing art leaves the normal counter usable. See [Scryfall API usage and attribution](https://scryfall.com/docs/api), [image formats](https://scryfall.com/docs/api/images), and [rate limits](https://scryfall.com/docs/api/rate-limits).
 
 Command Table is unofficial Fan Content permitted under the [Fan Content Policy](https://company.wizards.com/fancontentpolicy). Not approved or endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. © Wizards of the Coast. This notice also appears in display/browser settings, with per-card credits in the app.

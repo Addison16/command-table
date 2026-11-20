@@ -2,6 +2,16 @@
 
 Entries record results and deployment state at the time of each check; historical `latest` digests and local-only status are not statements about the current release.
 
+## November 20 review improvements and new features
+
+This source update adds the items from the November review: faster long holds, host group life in rooms, keyboard shortcuts, a random opponent picker, a life graph in the recap, read-only spectator links, redo after your own undo in rooms, an in-app QR scanner, recorded winners with browser-local playgroup stats, saved players, optional trackers with Day/Night, a per-turn clock, Two-Headed Giant, Planechase, any-card lookup, seat backgrounds and commander import from deck links. SQLite moves to schema 4 (`watch_code`).
+
+ESLint, Prettier, TypeScript, the production build and all **289 unit/integration checks across 20 files** pass. E2E_RESULT
+
+The WebKit "dice bounce" failure on main was traced from its CI log to the adaptive quality change clearing the canvas without repainting it; the canvas now repaints after a resize and the test polls for the changed frame. WebKit is not installed in the development sandbox, so that fix is confirmed only by the hosted checks. Camera scanning, device photos and deck-site availability were not exercised on physical devices. Moxfield answered automated requests with 403 during development; the app reports that and asks for the commander name.
+
+README installation links now point at `compose.yaml` and `.env.docker.example` on main instead of release attachments. This updates source without creating a release tag or publishing Docker images.
+
 ## October 11 GitHub source reconciliation
 
 The source update combines the pending elimination/winner screens, rigid-body dice, appearance and artwork controls, optional-tool loading, shared-room synchronization and server maintenance changes with GitHub main at `5cfc70c`. Archenemy setup, schemes and team turns, centered dice with safe-area spacing, commander suggestions, home game lists and Docker manager icons are preserved. A regression check prevents the individual winner screen from declaring a surviving Archenemy teammate the sole winner; the board continues to announce the shared team result.

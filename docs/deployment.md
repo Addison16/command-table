@@ -20,11 +20,14 @@ The commands below use a POSIX shell, such as a Linux/macOS terminal or a WSL te
 
 ## Install the published image
 
-For a first installation, download **compose.yaml** and **docker.env.example** from the [v0.3.1 Docker installation downloads](https://github.com/Addison16/command-table/releases/tag/v0.3.1). Put both in a dedicated folder, open a terminal there, and copy the environment example:
+For a first installation, make a dedicated folder, open a terminal there, and download the Compose file and the environment example from the repository:
 
 ```sh
-cp docker.env.example .env
+curl -fLO https://raw.githubusercontent.com/Addison16/command-table/main/compose.yaml
+curl -fL -o .env https://raw.githubusercontent.com/Addison16/command-table/main/.env.docker.example
 ```
+
+The same two files are attached to each [GitHub release](https://github.com/Addison16/command-table/releases/latest), where the environment example is named `docker.env.example`.
 
 Edit `.env` before starting. For phones on your LAN, use the host's actual LAN address in place of this example:
 
@@ -167,7 +170,7 @@ The primary image name is now `commandtable`. To switch an existing installation
 MTG_IMAGE=ghcr.io/addison16/commandtable:latest
 ```
 
-The original image-address migration preserved the v0.2.0 runtime. Both names now receive the same stable application updates. Keep the same Compose project and service names, data volume, configuration and public origin; do not create a replacement stack or volume. The old image address remains a compatibility alias. The GitHub source repository remains `Addison16/commanders-table`.
+The original image-address migration preserved the v0.2.0 runtime. Both names now receive the same stable application updates. Keep the same Compose project and service names, data volume, configuration and public origin; do not create a replacement stack or volume. The old image address remains a compatibility alias. The GitHub source repository is `Addison16/command-table`; links to its former `commanders-table` name redirect.
 
 1. [Back up](#back-up) the running server and copy the verified file out. Export important browser-local games separately.
 2. Keep the existing settings and use `MTG_IMAGE=ghcr.io/addison16/commandtable:latest` to follow stable releases, then run:
@@ -254,7 +257,7 @@ This fallback is an emulation-only verification image, not the published runtime
 
 ## Publishing a release
 
-Source remains at `Addison16/commanders-table`. The primary image path is `ghcr.io/addison16/commandtable`; `ghcr.io/addison16/commanders-table` is retained as the compatibility image path. Future releases will publish the same application to both names. The workflow uses the repository owner's lowercase name, so a fork publishes under its own owner. Set `MTG_IMAGE` when consuming a fork's image. No Docker Hub account or stored registry password is needed: the workflow uses GitHub's scoped `GITHUB_TOKEN`.
+Source is at `Addison16/command-table`. The primary image path is `ghcr.io/addison16/commandtable`; `ghcr.io/addison16/commanders-table` is retained as the compatibility image path. Future releases will publish the same application to both names. The workflow uses the repository owner's lowercase name, so a fork publishes under its own owner. Set `MTG_IMAGE` when consuming a fork's image. No Docker Hub account or stored registry password is needed: the workflow uses GitHub's scoped `GITHUB_TOKEN`.
 
 For a new fork, enable GitHub Actions and verify its image configuration before publishing. The initial release used:
 

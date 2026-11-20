@@ -2,6 +2,10 @@
 
 [BUILD_PLAN.md](../BUILD_PLAN.md) describes the product and implementation as built; the original September 15 specification remains in its Git history.
 
+## November 20 review improvements and new features
+
+The source now includes Two-Headed Giant, Planechase, optional trackers, a turn clock, recorded winners and playgroup stats, saved players, any-card lookup, seat backgrounds, commander import from Archidekt deck links, spectator links, an in-app QR scanner, redo in rooms, host group life, keyboard shortcuts, a random opponent picker and a life graph in the recap. It awaits a new Docker release; see the [verification record](testing.md).
+
 ## October 11 GitHub source update
 
 The current source adds elimination and winner screens, physically simulated dice, coordinated table looks, commander artwork framing, separately loaded optional tools, and server reliability improvements: SQLite schema 3 with bounded receipts and a retry floor, shared command budgets, socket admission caps, verified automatic backups and private diagnostics. It combines the pending local work with the Archenemy preset, centered dice layout, commander suggestion fixes, home game lists and Docker manager icon support already on GitHub. Archenemy team victories keep their shared outcome instead of naming a surviving teammate as an individual winner.
