@@ -1,5 +1,6 @@
 import { elapsed, teamOf } from '../../shared/game.js';
 import type { Game } from '../../shared/schema.js';
+import { turnShares } from './gameInsights.js';
 import { emblemPaths, emblemSize } from '../brand/emblem.js';
 
 export type Recap = {
@@ -21,6 +22,8 @@ export type Recap = {
   }[];
   /** Life totals over the game, in player order, when the game recorded them. */
   life?: { from: number; to: number; points: { t: number; l: number[] }[] };
+  /** Time each player, or each side, spent on their turns, when turns were tracked. */
+  turns?: { key: string; name: string; time: string }[];
 };
 
 /** The recap result that matches a winner recorded during the game. */
@@ -62,6 +65,11 @@ export function createRecap(game: Game, capturedAt: number, result = ''): Recap 
         ? (game.result?.winners ?? [])
         : [];
   const log = game.lifeLog ?? [];
+  const turns = turnShares(game, at).map((share) => ({
+    key: share.key,
+    name: share.name,
+    time: recapDuration(share.ms),
+  }));
   return {
     gameId: game.id,
     final,
@@ -94,6 +102,7 @@ export function createRecap(game: Game, capturedAt: number, result = ''): Recap 
     ...(log.length > 1 && log.every((point) => point.l.length === game.order.length)
       ? { life: { from: log[0].t, to: Math.max(at, log.at(-1)!.t), points: log } }
       : {}),
+    ...(turns.length ? { turns } : {}),
   };
 }
 

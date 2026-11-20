@@ -168,6 +168,47 @@
     color: var(--accent-text);
   }
 
+  /* Life history and time on turns */
+  .life-history ol,
+  .recap-turns {
+    display: grid;
+    gap: 0;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .life-history li,
+  .recap-turns li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: baseline;
+    gap: 14px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .recap-turns li {
+    grid-template-columns: 1fr auto;
+  }
+  .recap-turns span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .life-history li > span:first-child {
+    color: var(--muted);
+  }
+  .life-history strong {
+    min-width: 44px;
+    text-align: right;
+  }
+  .life-history .loss {
+    color: var(--danger);
+  }
+  .life-history .gain {
+    color: var(--accent-text);
+  }
+
   /* Saved regulars */
   .saved-players {
     margin: 8px 0 12px;
@@ -293,6 +334,111 @@
     display: block;
     color: var(--muted);
     font-size: 11px;
+  }
+
+  /* Dungeons */
+  .dungeon {
+    margin: 10px 0;
+    padding: 12px 14px;
+    border: 1px solid var(--accent-line-strong);
+    border-radius: 16px;
+    background: linear-gradient(160deg, var(--accent-soft), var(--surface));
+  }
+  .dungeon h3 {
+    margin: 0 0 8px;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    font-weight: 600;
+  }
+  .dungeon ol,
+  .dungeon-others {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .dungeon li {
+    display: grid;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  .dungeon li span {
+    color: var(--soft-text);
+  }
+  .dungeon li.here {
+    border-color: var(--gold);
+    background: var(--surface-inset);
+  }
+  .dungeon li.here strong::after {
+    content: ' · You are here';
+    color: var(--accent-text);
+    font-weight: 500;
+  }
+  .dungeon li.next {
+    border-style: dashed;
+    border-color: var(--accent-line-strong);
+  }
+  .dungeon-actions,
+  .dungeon-choices {
+    display: grid;
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .dungeon-choices button,
+  .dungeon-others button {
+    display: grid;
+    justify-items: start;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+  }
+  .dungeon-choices small,
+  .dungeon-others span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  /* Storm count and mana pool */
+  .turn-tool-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .turn-tool-row > span {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .turn-tool-row .stepper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .turn-tool-row .stepper strong {
+    min-width: 34px;
+    text-align: center;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+  .mana-mark {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--control-line);
+    border-radius: 50%;
+    background: var(--control-background);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 600;
   }
 
   /* Card lookup */

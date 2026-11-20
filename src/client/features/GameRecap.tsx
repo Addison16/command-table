@@ -159,6 +159,22 @@ export function GameRecapSheet({
           <Icon name="download" /> Download PNG
         </button>
       </div>
+      {recap.turns && (
+        <section className="detail-section" data-testid="recap-turns">
+          <h3>
+            <Icon name="history" />
+            Time on turns
+          </h3>
+          <ul className="recap-turns">
+            {recap.turns.map((share) => (
+              <li key={share.key}>
+                <span>{share.name}</span>
+                <strong>{share.time}</strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <details className="recap-text">
         <summary>Text version</summary>
         <p>

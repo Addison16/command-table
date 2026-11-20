@@ -13,6 +13,8 @@ import {
 import { DeckImport } from './DeckImport.js';
 import { savedFromGame, saveRegular } from './SavedPlayers.js';
 import { seatPhoto } from './seatPhoto.js';
+import { lifeHistory } from './gameInsights.js';
+import { recapDuration } from './gameRecap.js';
 import { teammates } from '../../shared/game.js';
 import '../styles/extras.css';
 import { ask, Field, Icon, Sheet, Toggle } from '../components/ui.js';
@@ -147,6 +149,7 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
   const commanders = Object.values(game.commanders).filter((c) => c.ownerId === playerId);
   const disabled = !canEdit(playerId) || player.eliminated || game.status === 'ended';
   const damageDisabled = disabled || !source;
+  const history = lifeHistory(game, playerId);
   const manage = canEdit(playerId) && game.status === 'active';
   const pending = useApp((s) => s.pending);
   const photo = useApp((s) => s.playmats[player.name.trim().toLowerCase()]);
@@ -340,6 +343,25 @@ export function PlayerDetails({ playerId, onClose }: { playerId: string; onClose
         </div>
       )}
       <Counter playerId={playerId} field="life" value={player.life} disabled={disabled} />
+      {history.length > 0 && (
+        <details className="life-history">
+          <summary>
+            Life history <span>{history.length}</span>
+          </summary>
+          <ol aria-label={`${player.name}’s life changes, newest first`}>
+            {history.map((step, index) => (
+              <li key={index}>
+                <span>{recapDuration(step.at)} in</span>
+                <strong className={step.delta < 0 ? 'loss' : 'gain'}>
+                  {step.delta > 0 ? '+' : '−'}
+                  {Math.abs(step.delta)}
+                </strong>
+                <span>{step.life} life</span>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
       {game.settings.poison && (
         <>
           <Counter playerId={playerId} field="poison" value={player.poison} disabled={disabled} />

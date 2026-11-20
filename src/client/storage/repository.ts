@@ -15,7 +15,7 @@ import {
 import { newId } from '../../shared/random.js';
 import { recoveryDeadline, reduceGame, type Context } from '../../shared/game.js';
 import { commanderCardSchema } from '../../shared/cards.js';
-import { MAX_STAT_RECORDS, statRecordSchema, type StatRecord } from '../features/stats.js';
+import { MAX_STAT_RECORDS, mergeStats, statRecordSchema, type StatRecord } from '../features/stats.js';
 import {
   accentColors,
   colorThemes,
@@ -347,6 +347,12 @@ export class Repository {
       .slice(0, MAX_STAT_RECORDS);
     await records.put(next, 'stats');
     await tx?.done;
+  }
+  /** Add games exported from another device. Returns how many were new. */
+  async importStats(incoming: unknown) {
+    const merged = mergeStats(await this.stats(), incoming);
+    if (merged.added) await this.put('stats', merged.records);
+    return merged.added;
   }
   /** Photos used as seat backgrounds on this device only, keyed by player name. */
   async playmats(): Promise<Record<string, string>> {
