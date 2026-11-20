@@ -32,6 +32,8 @@ Archenemy scheme names and rules text in `src/shared/schemeCards.ts` were genera
 
 Plane and phenomenon names, rules text and Scryfall IDs in `src/shared/planeIndex.ts` and `src/shared/planeCards.ts` were generated from Scryfall's oracle data by `scripts/generate-planes.mjs` and belong to Wizards of the Coast. Planechase shows each card's Scryfall art when online and keeps the text readable offline.
 
+Dungeon names, rooms and rules text in `src/shared/dungeons.ts` were generated the same way by `scripts/generate-dungeons.mjs` (`t:dungeon`); Baldur's Gate Wilderness is left out because it has no printed paths.
+
 The in-app QR scanner uses the browser's `BarcodeDetector` where available and otherwise loads [jsQR](https://github.com/cozmo/jsQR) (Apache-2.0) on demand. Deck links read public deck data from [Archidekt](https://archidekt.com); only the commander's name and Scryfall ID are used.
 
 The production service worker keeps a separate, bounded cache for viewed public art images; private game APIs are never cached. New searches and uncached images require internet access. Missing art leaves the normal counter usable. See [Scryfall API usage and attribution](https://scryfall.com/docs/api), [image formats](https://scryfall.com/docs/api/images), and [rate limits](https://scryfall.com/docs/api/rate-limits).

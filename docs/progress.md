@@ -2,6 +2,10 @@
 
 [BUILD_PLAN.md](../BUILD_PLAN.md) describes the product and implementation as built; the original September 15 specification remains in its Git history.
 
+## November 20 second round
+
+Adds a dungeon tracker, a storm count and mana pool for the current turn, a life history for each seat, time on turns in the recap, shuffled seating in setup, and stats import from another device. Awaits a new Docker release.
+
 ## November 20 review improvements and new features
 
 The source now includes Two-Headed Giant, Planechase, optional trackers, a turn clock, recorded winners and playgroup stats, saved players, any-card lookup, seat backgrounds, commander import from Archidekt deck links, spectator links, an in-app QR scanner, redo in rooms, host group life, keyboard shortcuts, a random opponent picker and a life graph in the recap. It awaits a new Docker release; see the [verification record](testing.md).

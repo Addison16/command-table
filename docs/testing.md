@@ -2,6 +2,14 @@
 
 Entries record results and deployment state at the time of each check; historical `latest` digests and local-only status are not statements about the current release.
 
+## November 20 second round
+
+Adds the dungeon tracker (`venture`, `leaveDungeon`), per-player time on turns (`turnTime`), a life history, the device-local storm count and mana pool, shuffled seating and stats import. New game fields are optional, so earlier saves and rooms stay readable and no database migration is needed.
+
+ESLint, Prettier, TypeScript, the production build and all **299 unit/integration checks across 21 files** pass. The Chromium phone browser suite ran **130 cases**: 129 passed and the production offline case kept its existing environment guard. Four new cases cover the dungeon tracker, the storm count and mana pool, life history with time on turns, and shuffled seating with stats import, with automated accessibility checks on the new sheets. WebKit runs in the hosted checks.
+
+This updates source without creating a release tag or publishing Docker images.
+
 ## November 20 review improvements and new features
 
 This source update adds the items from the November review: faster long holds, host group life in rooms, keyboard shortcuts, a random opponent picker, a life graph in the recap, read-only spectator links, redo after your own undo in rooms, an in-app QR scanner, recorded winners with browser-local playgroup stats, saved players, optional trackers with Day/Night, a per-turn clock, Two-Headed Giant, Planechase, any-card lookup, seat backgrounds and commander import from deck links. SQLite moves to schema 4 (`watch_code`).
