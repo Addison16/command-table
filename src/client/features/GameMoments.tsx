@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { elapsed } from '../../shared/game.js';
+import { elapsed, teammates } from '../../shared/game.js';
 import type { Game } from '../../shared/schema.js';
 import { act, isHost, useApp } from '../app/store.js';
 import { Icon } from '../components/ui.js';
@@ -68,9 +68,11 @@ export function WinnerScreen({
   if (!player) return null;
   const available = live && !readOnly && !pending;
   // Generated labels identify unnamed commanders in saves, not on a victory screen.
+  // Both heads of a Two-Headed Giant team win together.
+  const side = game.teams ? teammates(game, playerId) : [playerId];
   const commanders = game.settings.commander
     ? Object.values(game.commanders)
-        .filter((c) => c.ownerId === playerId && (c.card || !/^Commander [12]$/.test(c.label)))
+        .filter((c) => side.includes(c.ownerId) && (c.card || !/^Commander [12]$/.test(c.label)))
         .map((c) => c.label)
     : [];
   return (
@@ -98,9 +100,10 @@ export function WinnerScreen({
             <span className="victory-crest">
               <Icon name="crown" size={44} />
             </span>
-            <p className="eyebrow gold">LAST PLAYER STANDING</p>
+            <p className="eyebrow gold">{side.length > 1 ? 'LAST TEAM STANDING' : 'LAST PLAYER STANDING'}</p>
             <Dialog.Title className="victory-title">
-              {player.name} <em>wins</em>
+              {side.map((id) => game.players[id].name).join(' & ')}{' '}
+              <em>{side.length > 1 ? 'win' : 'wins'}</em>
             </Dialog.Title>
             <Dialog.Description className="victory-detail">
               {commanders.length ? `Led by ${commanders.join(' & ')}.` : 'The table is theirs.'}

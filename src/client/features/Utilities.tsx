@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
-import { elapsed, isArchenemy, isTeamTurn, turnOrder } from '../../shared/game.js';
+import {
+  elapsed,
+  isArchenemy,
+  isTeamTurn,
+  opponentsOf,
+  teamIndex,
+  teamName,
+  turnOrder,
+} from '../../shared/game.js';
 import { type Command, type Roll } from '../../shared/schema.js';
-import { act, isHost, useApp, takeOver, report } from '../app/store.js';
+import { act, isHost, isSeated, isSpectator, useApp, takeOver, report } from '../app/store.js';
+import { planeEntry } from '../../shared/planes.js';
+import { TrackerOptions } from './Trackers.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { rollTitle } from '../dice/DiceRoll.js';
 import { preferredDicePlayer, rememberDicePlayer } from '../dice/preference.js';
@@ -15,10 +25,12 @@ export function Utilities({
   onClose,
   onReplay,
   onGroupLife,
+  open,
 }: {
   onClose: () => void;
   onReplay: (roll: Roll) => void;
   onGroupLife: () => void;
+  open: (sheet: string) => void;
 }) {
   const game = useApp((s) => s.game)!,
     connected = useApp((s) => s.connected),
@@ -42,8 +54,11 @@ export function Utilities({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  const enabled = !readOnly && (mode === 'local' || connected),
-    host = enabled && isHost() && game.status === 'active';
+  const enabled = !readOnly && (mode === 'local' || connected) && !isSpectator(),
+    host = enabled && isHost() && game.status === 'active',
+    seated = isSeated() && game.status === 'active';
+  const picker = game.players[playerId] && !game.players[playerId].eliminated ? playerId : '';
+  const pickable = picker ? opponentsOf(game, picker).filter((id) => !game.players[id].eliminated).length : 0;
   const eligible = game.order.filter((id) => !game.players[id].eliminated);
   const roll = (kind: Extract<Command, { type: 'roll' }>['kind']) =>
     void act({
@@ -51,7 +66,9 @@ export function Utilities({
       kind,
       sides,
       count,
-      ...((kind === 'dice' || kind === 'coin') && game.players[playerId] ? { playerId } : {}),
+      ...((kind === 'dice' || kind === 'coin' || kind === 'opponent') && game.players[playerId]
+        ? { playerId }
+        : {}),
     });
   return (
     <Sheet
@@ -142,16 +159,31 @@ export function Utilities({
           Group life change
         </h3>
         <p className="hint">Apply life loss to selected opponents, with optional life gain for the caster.</p>
-        <button
-          className="secondary full"
-          disabled={mode === 'room' || !host || pending > 0}
-          onClick={onGroupLife}
-        >
+        <button className="secondary full" disabled={!host || pending > 0} onClick={onGroupLife}>
           Group life change
         </button>
         {mode === 'room' && (
-          <p className="hint">In shared rooms, each player records life changes on their own seat.</p>
+          <p className="hint">
+            {isHost()
+              ? 'As host you can apply one effect to several seats. Players still record their own changes.'
+              : 'The host can apply a group effect. Otherwise each player records their own life changes.'}
+          </p>
         )}
+      </section>
+      <section className="detail-section">
+        <h3>
+          <Icon name="card" />
+          Cards & planes
+        </h3>
+        <button className="secondary full" onClick={() => open('card-lookup')}>
+          Look up any card
+        </button>
+        <button className="secondary full" onClick={() => open('planechase')}>
+          {game.planechase
+            ? `Planechase · ${planeEntry(game.planechase.current)?.name ?? 'planar deck'}`
+            : 'Planechase'}
+        </button>
+        <p className="hint">Read a card’s text and rulings, or bring out a shared planar deck and die.</p>
       </section>
       <section className="detail-section">
         <h3>
@@ -177,6 +209,24 @@ export function Utilities({
           Just choose a player
         </button>
         {!eligible.length && <p className="hint">Restore a player to choose who starts.</p>}
+      </section>
+      <section className="detail-section">
+        <h3>
+          <Icon name="people" />
+          Random opponent
+        </h3>
+        <p className="hint">
+          {picker
+            ? `Picks one of ${game.players[picker].name}’s ${pickable} ${pickable === 1 ? 'opponent' : 'opponents'} still in the game.`
+            : 'Choose a player under “Roll for” above, then pick one of their opponents at random.'}
+        </p>
+        <button
+          className="secondary full"
+          disabled={!enabled || !picker || !pickable}
+          onClick={() => roll('opponent')}
+        >
+          Choose a random opponent
+        </button>
       </section>
       {previousRolls.length > 0 && (
         <section className="detail-section">
@@ -209,7 +259,9 @@ export function Utilities({
         >
           Turn tracking
         </Toggle>
-        <p className="hint">Optional. Adds a small Next turn button beside Undo.</p>
+        <p className="hint">
+          Optional. Adds a small Next turn button beside Undo, and a clock for the current turn.
+        </p>
         {mode === 'room' && !isHost() && (
           <p className="hint">The host controls turn tracking for the room.</p>
         )}
@@ -227,7 +279,9 @@ export function Utilities({
                     ? `${game.players[id].name} · Archenemy`
                     : game.archenemy
                       ? 'The team'
-                      : game.players[id].name}
+                      : game.teams
+                        ? teamName(teamIndex(game, id))
+                        : game.players[id].name}
                 </option>
               ))}
               {isTeamTurn(game) && !turnOrder(game).includes(game.turn.playerId!) && (
@@ -237,6 +291,59 @@ export function Utilities({
           </Field>
         )}
       </section>
+      <details className="tracker-details">
+        <summary>
+          Optional trackers{' '}
+          <span>
+            {game.settings.counters.length + game.settings.markerTrackers.length
+              ? `${game.settings.counters.length + game.settings.markerTrackers.length} on`
+              : 'Off'}
+          </span>
+        </summary>
+        <TrackerOptions
+          value={game.settings}
+          disabled={!host || pending > 0}
+          onChange={(next) =>
+            void act({ type: 'trackers', counters: next.counters, markerTrackers: next.markerTrackers })
+          }
+        />
+        {mode === 'room' && !isHost() && <p className="hint">The host chooses the table’s trackers.</p>}
+        {game.settings.markerTrackers.includes('dayNight') && (
+          <div className="day-night" role="group" aria-label="Day and night">
+            {(['day', 'night'] as const).map((value) => (
+              <button
+                key={value}
+                className={game.markers.dayNight === value ? 'selected' : ''}
+                aria-pressed={game.markers.dayNight === value}
+                disabled={!seated || pending > 0 || game.markers.dayNight === value}
+                onClick={() => void act({ type: 'dayNight', value })}
+              >
+                {value === 'day' ? '☀ Day' : '☾ Night'}
+              </button>
+            ))}
+            <button
+              className="text-button"
+              disabled={!seated || pending > 0 || !game.markers.dayNight}
+              onClick={() => void act({ type: 'dayNight', value: null })}
+            >
+              Neither
+            </button>
+          </div>
+        )}
+        {(['monarch', 'initiative'] as const)
+          .filter((marker) => game.settings.markerTrackers.includes(marker) && game.markers[marker])
+          .map((marker) => (
+            <button
+              key={marker}
+              className="text-button full"
+              disabled={!host || pending > 0}
+              onClick={() => void act({ type: 'marker', marker, playerId: null })}
+            >
+              Clear the {marker} ({game.players[game.markers[marker]!]?.name})
+            </button>
+          ))}
+        <p className="hint">Take the monarch or the initiative from a player’s details.</p>
+      </details>
       <details>
         <summary>
           Game timer <span>{formatTime(elapsed(game, now + offset))}</span>

@@ -9,7 +9,7 @@ export function openDatabase(filename: string) {
   db.pragma('busy_timeout = 5000');
   db.pragma('synchronous = FULL');
   const version = db.pragma('user_version', { simple: true }) as number;
-  if (version > 3) {
+  if (version > 4) {
     db.close();
     throw new Error('Database schema is newer than this server. Restore the newer application version.');
   }
@@ -43,6 +43,15 @@ export function openDatabase(filename: string) {
         CREATE INDEX snapshots_by_room ON snapshots(room_id);
         UPDATE rooms SET receipt_count=(SELECT count(*) FROM receipts WHERE room_id=rooms.id);
         PRAGMA user_version = 3;
+      `);
+    })();
+  if (version < 4)
+    db.transaction(() => {
+      // A second, read-only invitation code for spectators. Absent until the host allows them.
+      db.exec(`
+        ALTER TABLE rooms ADD COLUMN watch_code TEXT;
+        CREATE UNIQUE INDEX rooms_watch_code ON rooms(watch_code) WHERE watch_code IS NOT NULL;
+        PRAGMA user_version = 4;
       `);
     })();
   return db;

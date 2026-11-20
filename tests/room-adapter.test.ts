@@ -151,9 +151,11 @@ async function liveRoom() {
 }
 
 describe('confirmed player saves in shared rooms', () => {
-  it('rejects group effects and other-seat edits before previewing or sending them', async () => {
+  it('rejects a guest’s group effects and other-seat edits before previewing or sending them', async () => {
     const f = await liveRoom();
     const before = f.state.confirmed;
+    // Group effects are the host's alone; this player is a guest.
+    f.state.room = { ...f.state.room, hostId: newId() };
     expect(
       await f.savePlayer({
         type: 'groupLife',

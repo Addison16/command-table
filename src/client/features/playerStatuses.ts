@@ -2,7 +2,7 @@ import type { Game } from '../../shared/schema.js';
 import { schemeCard } from '../../shared/schemes.js';
 
 export type PlayerStatus = {
-  kind: 'commander-damage' | 'poison' | 'tax' | 'scheme';
+  kind: 'commander-damage' | 'poison' | 'tax' | 'scheme' | 'counter';
   key: string;
   label: string;
   value: string;
@@ -71,6 +71,19 @@ export function playerStatuses(game: Game, playerId: string): PlayerStatus[] {
         warning: false,
       });
     });
+  }
+  // Optional counters stay out of the way until a player actually has some.
+  for (const counter of game.settings.counters) {
+    const value = player.counters[counter] ?? 0;
+    if (value > 0)
+      statuses.push({
+        kind: 'counter',
+        key: `counter:${counter}`,
+        label: counter.toUpperCase(),
+        value: String(value),
+        description: `${player.name}: ${value} ${counter}.`,
+        warning: false,
+      });
   }
   return statuses;
 }

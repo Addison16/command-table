@@ -101,7 +101,7 @@ describe('authoritative room transactions', () => {
       }
     }
   });
-  it('rejects group life changes for every room participant without changing the table', () => {
+  it('lets only the host apply a group life change, and undo it', () => {
     const f = fixture();
     f.approve();
     const command: Extract<Command, { type: 'groupLife' }> = {
@@ -112,13 +112,118 @@ describe('authoritative room transactions', () => {
       gain: 6,
     };
     const before = f.svc.view(f.room.id, f.host.hash);
-    for (const actor of [f.host, f.guest, f.other]) {
+    for (const actor of [f.guest, f.other]) {
       expect(f.run(actor.hash, command).receipt).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/one device/i),
+        error: expect.stringMatching(/only the host/i),
       });
       expect(f.svc.view(f.room.id, f.host.hash)).toEqual(before);
     }
+    expect(f.run(f.host.hash, command).receipt.ok).toBe(true);
+    const after = f.svc.view(f.room.id, f.host.hash).game!;
+    expect(after.players[f.room.seats[0].id].life).toBe(46);
+    for (const seat of f.room.seats.slice(1)) expect(after.players[seat.id].life).toBe(36);
+    // The effect belongs to the host: a player it touched cannot reverse it.
+    expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(false);
+    expect(f.run(f.host.hash, { type: 'undo' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.players).toEqual(before.game!.players);
+  });
+  it('lets a seated player take a table marker for their own seat only', () => {
+    const f = fixture();
+    f.approve();
+    const [mine, theirs] = f.room.seats.map((seat) => seat.id);
+    expect(f.run(f.guest.hash, { type: 'marker', marker: 'monarch', playerId: theirs }).receipt.ok).toBe(
+      false,
+    );
+    expect(f.run(f.guest.hash, { type: 'marker', marker: 'monarch', playerId: mine }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.markers.monarch).toBe(mine);
+    expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.markers.monarch).toBeNull();
+    expect(f.run(f.guest.hash, { type: 'dayNight', value: 'night' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.other.hash).game!.markers.dayNight).toBe('night');
+  });
+  it('offers redo only to the player who just undid their own action', () => {
+    const f = fixture();
+    f.approve();
+    const seat = f.room.seats[0].id;
+    f.run(f.guest.hash, { type: 'adjust', playerId: seat, field: 'life', delta: -3 });
+    expect(f.svc.view(f.room.id, f.guest.hash).canRedo).toBeUndefined();
+    expect(f.run(f.guest.hash, { type: 'redo' }).receipt.ok).toBe(false);
+    expect(f.run(f.guest.hash, { type: 'undo' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.guest.hash).canRedo).toBe(true);
+    expect(f.svc.view(f.room.id, f.other.hash).canRedo).toBeUndefined();
+    expect(f.run(f.other.hash, { type: 'redo' }).receipt.ok).toBe(false);
+    expect(f.run(f.guest.hash, { type: 'redo' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.players[seat].life).toBe(37);
+    // Anything saved after the undo closes the window.
+    f.run(f.guest.hash, { type: 'undo' });
+    f.run(f.other.hash, { type: 'adjust', playerId: f.room.seats[1].id, field: 'life', delta: -1 });
+    expect(f.svc.view(f.room.id, f.guest.hash).canRedo).toBeUndefined();
+    expect(f.run(f.guest.hash, { type: 'redo' }).receipt.ok).toBe(false);
+  });
+  it('gives spectators a read-only view through a separate link the host can close', () => {
+    const f = fixture();
+    f.approve();
+    expect(f.svc.view(f.room.id, f.host.hash).watchUrl).toBeUndefined();
+    expect(f.run(f.guest.hash, { type: 'spectators', enabled: true }).receipt.ok).toBe(false);
+    expect(f.run(f.host.hash, { type: 'spectators', enabled: true }).receipt.ok).toBe(true);
+    const watchUrl = f.svc.view(f.room.id, f.host.hash).watchUrl!;
+    const code = new URL(watchUrl).searchParams.get('join')!;
+    expect(code).not.toBe(f.room.code);
+    expect(new URL(watchUrl).searchParams.has('watch')).toBe(true);
+    expect(f.svc.view(f.room.id, f.guest.hash).watchUrl).toBeUndefined();
+    // A locked room still admits spectators: they take no seat.
+    f.run(f.host.hash, { type: 'lock', locked: true });
+    const watcher = f.session();
+    const view = f.svc.join(watcher.hash, code, 'Viewer');
+    expect(view.me.status).toBe('spectator');
+    expect(view.game!.order).toHaveLength(4);
+    expect(view.code).toBeUndefined();
+    expect(f.svc.view(f.room.id, f.host.hash).spectators).toBe(1);
+    const seat = f.room.seats[2].id;
+    for (const command of [
+      { type: 'adjust', playerId: seat, field: 'life', delta: -1 },
+      { type: 'roll', kind: 'coin', sides: 20, count: 1 },
+      { type: 'requestSeat', playerId: seat, profile: { name: 'Viewer' } },
+      { type: 'planarDie' },
+    ] as (Command | AdminCommand)[])
+      expect(f.run(watcher.hash, command).receipt.ok).toBe(false);
+    // Watching first does not stop someone from joining properly, once the room is unlocked.
+    expect(() => f.svc.join(watcher.hash, f.room.code!, 'Viewer')).toThrow();
+    expect(f.svc.join(watcher.hash, code, 'Viewer').me.status).toBe('spectator');
+    f.run(f.host.hash, { type: 'lock', locked: false });
+    expect(f.svc.join(watcher.hash, f.room.code!, 'Viewer').me.status).toBe('pending');
+    expect(f.svc.view(f.room.id, f.host.hash).spectators).toBe(0);
+    expect(
+      f.run(watcher.hash, { type: 'requestSeat', playerId: seat, profile: { name: 'Viewer' } }).receipt.ok,
+    ).toBe(true);
+    const second = f.session();
+    f.svc.join(second.hash, code, 'Second');
+    expect(f.run(f.host.hash, { type: 'spectators', enabled: false }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).watchUrl).toBeUndefined();
+    expect(f.svc.view(f.room.id, watcher.hash).me.status).toBe('pending');
+    expect(() => f.svc.view(f.room.id, second.hash)).toThrow();
+    expect(() => f.svc.join(f.session().hash, code, 'Late')).toThrow();
+  });
+  it('shares a planar deck that any seated player can roll for and walk', () => {
+    const f = fixture();
+    f.approve();
+    expect(f.run(f.guest.hash, { type: 'shufflePlanes', sets: ['pca'] }).receipt.ok).toBe(false);
+    expect(f.run(f.host.hash, { type: 'shufflePlanes', sets: ['pca'] }).receipt.ok).toBe(true);
+    const started = f.svc.view(f.room.id, f.guest.hash).game!.planechase!;
+    expect(started.current).toBe(started.deck[0]);
+    expect(new Set(started.deck).size).toBe(started.deck.length);
+    expect(f.run(f.guest.hash, { type: 'planarDie' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.other.hash).game!.planechase).toMatchObject({ rolls: 1 });
+    expect(f.run(f.other.hash, { type: 'planeswalk' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.planechase).toMatchObject({
+      current: started.deck[1],
+      rolls: 0,
+      die: null,
+    });
+    expect(f.run(f.guest.hash, { type: 'endPlanechase' }).receipt.ok).toBe(false);
+    expect(f.run(f.host.hash, { type: 'endPlanechase' }).receipt.ok).toBe(true);
+    expect(f.svc.view(f.room.id, f.host.hash).game!.planechase).toBeUndefined();
   });
   const playerCommands: ((game: Game, playerId: string) => Command)[] = [
     (_, playerId) => ({ type: 'adjust', playerId, field: 'life', delta: -1 }),
@@ -220,7 +325,8 @@ describe('authoritative room transactions', () => {
       expect(f.run(f.host.hash, build(before.game!, before.game!.order[0])).receipt.ok).toBe(false);
     expect(f.svc.view(f.room.id, f.host.hash).game).toEqual(before.game);
     const controls: Command[] = [
-      { type: 'marker', marker: 'monarch', playerId: before.game!.order[0] },
+      // Another player's seat: only the host may hand a marker to someone else.
+      { type: 'marker', marker: 'monarch', playerId: before.game!.order[1] },
       { type: 'turn', playerId: before.game!.order[0], advance: true },
       { type: 'turnTracking', enabled: true },
       { type: 'timer', action: 'pause' },
@@ -236,7 +342,7 @@ describe('authoritative room transactions', () => {
     expect(after.players).toEqual(before.game!.players);
     expect(after.commanders).toEqual(before.game!.commanders);
   });
-  it.each(['life', 'damage', 'commander', 'group'])(
+  it.each(['poison', 'damage', 'commander'])(
     'rejects a legacy %s undo frame that changes another seat, even for its actor',
     (kind) => {
       const f = fixture();
@@ -247,13 +353,11 @@ describe('authoritative room transactions', () => {
         kind === 'damage' ? c.ownerId !== playerId : c.ownerId === playerId,
       )!.id;
       const command: Command =
-        kind === 'life'
-          ? { type: 'adjust', playerId, field: 'life', delta: -1 }
+        kind === 'poison'
+          ? { type: 'adjust', playerId, field: 'poison', delta: 1 }
           : kind === 'damage'
             ? { type: 'damage', playerId, commanderId, amount: 2, subtractLife: false }
-            : kind === 'commander'
-              ? { type: 'cast', commanderId }
-              : { type: 'groupLife', casterId: f.room.me.seatId!, targetIds: [playerId], loss: 2, gain: 2 };
+            : { type: 'cast', commanderId };
       const legacy = reduceGame(game, command, {
         id: randomUUID(),
         operationId: randomUUID(),
@@ -617,6 +721,8 @@ describe('authoritative room transactions', () => {
       ALTER TABLE receipts DROP COLUMN base_revision;
       ALTER TABLE rooms DROP COLUMN receipt_count;
       ALTER TABLE rooms DROP COLUMN retry_floor_revision;
+      DROP INDEX rooms_watch_code;
+      ALTER TABLE rooms DROP COLUMN watch_code;
       PRAGMA user_version = 1;
     `);
     f.db.close();
@@ -625,7 +731,7 @@ describe('authoritative room transactions', () => {
       if (db.open) db.close();
     });
     const svc = new RoomService(db, config, f.svc.now);
-    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    expect(db.pragma('user_version', { simple: true })).toBe(4);
     expect(svc.view(f.room.id, f.host.hash)).toEqual(original);
     const card: CommanderCard = {
       id: randomUUID(),

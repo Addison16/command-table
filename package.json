@@ -34,6 +34,7 @@
     "better-sqlite3": "13.0.3",
     "fastify": "5.12.5",
     "idb": "8.0.3",
+    "jsqr": "1.4.0",
     "qrcode": "1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -68,11 +69,11 @@
   "author": "Addison16",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Addison16/commanders-table.git"
+    "url": "git+https://github.com/Addison16/command-table.git"
   },
-  "homepage": "https://github.com/Addison16/commanders-table#readme",
+  "homepage": "https://github.com/Addison16/command-table#readme",
   "bugs": {
-    "url": "https://github.com/Addison16/commanders-table/issues"
+    "url": "https://github.com/Addison16/command-table/issues"
   },
   "license": "PolyForm-Noncommercial-1.0.0"
 }

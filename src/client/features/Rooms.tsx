@@ -13,18 +13,30 @@ import { ask, downloadText, Field, Icon, Sheet, Toggle } from '../components/ui.
 import { CommanderInput } from '../components/CommanderInput.js';
 import { PlayerNameInput } from '../components/PlayerNameInput.js';
 import type { CommanderCard } from '../../shared/cards.js';
+import { teamName } from '../../shared/game.js';
+import { canScan, QrScanner } from './QrScanner.js';
+import { SavedPlayerSelect } from './SavedPlayers.js';
+import { DeckImport } from './DeckImport.js';
 import '../styles/archenemy.css';
+import '../styles/extras.css';
 export function JoinSheet({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState(new URLSearchParams(location.search).get('join') ?? ''),
     [name, setName] = useState(() => {
       const remembered = useApp.getState().profile.displayName;
-      return /^(?:Host|Player(?: [1-8])?)$/.test(remembered) ? '' : remembered;
+      return /^(?:Host|Spectator|Player(?: [1-8])?)$/.test(remembered) ? '' : remembered;
     }),
     [busy, setBusy] = useState(false);
+  // A spectator link opens the table read-only: no seat, no name needed.
+  const [watch, setWatch] = useState(new URLSearchParams(location.search).has('watch'));
+  const [scanning, setScanning] = useState(false);
   return (
     <Sheet
-      title="There’s a seat for you"
-      description="Enter your name, then choose your seat and commanders."
+      title={watch ? 'Watch the table' : 'There’s a seat for you'}
+      description={
+        watch
+          ? 'Follow every life total live. Spectators cannot change anything.'
+          : 'Enter your name, then choose your seat and commanders.'
+      }
       onClose={onClose}
     >
       <form
@@ -33,7 +45,7 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
           setBusy(true);
           try {
             const { joinRoom } = await import('../adapters/room.js');
-            await joinRoom(code, name.trim() || 'Player');
+            await joinRoom(code, name.trim() || (watch ? 'Spectator' : 'Player'));
             onClose();
           } catch (err) {
             report(err);
@@ -46,7 +58,10 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
           <input
             className="join-code-input"
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              setCode(e.target.value);
+              setWatch(false);
+            }}
             placeholder="ABCD EFGH"
             autoCapitalize="characters"
             autoCorrect="off"
@@ -55,16 +70,34 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
             required
           />
         </Field>
+        {canScan() && (
+          <button type="button" className="secondary full" onClick={() => setScanning((value) => !value)}>
+            {scanning ? 'Stop scanning' : 'Scan the room’s QR code'}
+          </button>
+        )}
+        {scanning && (
+          <QrScanner
+            onCode={(result) => {
+              setCode(result.code);
+              setWatch(result.watch);
+              setScanning(false);
+            }}
+          />
+        )}
         <PlayerNameInput
           label="Your display name"
-          hint="This will be your player name at the table."
+          hint={
+            watch
+              ? 'Optional. The host sees this name in the room’s list of people.'
+              : 'This will be your player name at the table.'
+          }
           value={name}
-          defaultName="Player"
+          defaultName={watch ? 'Spectator' : 'Player'}
           onChange={setName}
         />
         <button className="primary full" disabled={busy}>
           <Icon name="people" />
-          {busy ? 'Finding your table…' : 'Join room'}
+          {busy ? 'Finding your table…' : watch ? 'Watch room' : 'Join room'}
         </button>
         <p className="hint center">Your local game stays saved while you join.</p>
       </form>
@@ -147,8 +180,24 @@ function SeatRequest({ room }: { room: RoomView }) {
       <fieldset className="lobby-profile" disabled={disabled}>
         <legend>Your player</legend>
         <PlayerNameInput label="Player name" value={name} defaultName={defaultName} onChange={setName} />
+        <SavedPlayerSelect
+          label="Use a saved player"
+          disabled={disabled}
+          onPick={(player) => {
+            setName(player.name);
+            setCommanders([...player.commanders]);
+            setCommanderCards(player.commanderCards ?? player.commanders.map(() => null));
+          }}
+        />
         {commanderEnabled && (
           <>
+            <DeckImport
+              disabled={disabled}
+              onImport={(imported) => {
+                setCommanders(imported.map((entry) => entry.name));
+                setCommanderCards(imported.map((entry) => entry.card));
+              }}
+            />
             {commanders.map((label, index) => (
               <CommanderInput
                 key={index}
@@ -195,6 +244,7 @@ function SeatRequest({ room }: { room: RoomView }) {
           <span>
             {s.name}
             {s.archenemy && <small className="role-tag archenemy"> Archenemy</small>}
+            {s.team !== undefined && <small className="team-mark">{teamName(s.team).toUpperCase()}</small>}
           </span>
           <button
             type="submit"
@@ -220,6 +270,14 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
     pending = useApp((s) => s.pending),
     unresolved = useApp((s) => s.unresolved);
   const [qr, setQr] = useState('');
+  const [watchQr, setWatchQr] = useState('');
+  useEffect(() => {
+    setWatchQr('');
+    if (room.watchUrl)
+      void QRCode.toDataURL(room.watchUrl, { width: 240, margin: 1, errorCorrectionLevel: 'M' })
+        .then(setWatchQr)
+        .catch(report);
+  }, [room.watchUrl]);
   const [submitted, setSubmitted] = useState<Envelope[]>([]);
   const [archives, setArchives] = useState<Game[] | null>(null);
   const host = isHost(),
@@ -288,6 +346,49 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
           <p className="hint">
             Each player controls their own seat. Everyone can view the table and commanders.
           </p>
+          <Toggle
+            disabled={!ready}
+            checked={!!room.watchUrl}
+            onChange={(enabled) => void act({ type: 'spectators', enabled })}
+          >
+            Allow spectators
+          </Toggle>
+          {room.watchUrl ? (
+            <div className="watch-link">
+              {watchQr && <img className="qr-code" src={watchQr} alt="QR code to watch this room" />}
+              <Field label="Spectator link">
+                <input id="watch-url" readOnly value={room.watchUrl} onFocus={(e) => e.target.select()} />
+              </Field>
+              <button
+                className="secondary full"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(room.watchUrl!);
+                    notify('Spectator link copied');
+                  } catch {
+                    const input = document.querySelector<HTMLInputElement>('#watch-url');
+                    input?.focus();
+                    input?.select();
+                    notify('Select and copy the spectator link');
+                  }
+                }}
+              >
+                <Icon name="link" />
+                Copy spectator link
+              </button>
+              <p className="hint">
+                Anyone with this link can watch the table live but cannot change anything.{' '}
+                {room.spectators
+                  ? `${room.spectators} ${room.spectators === 1 ? 'spectator has' : 'spectators have'} joined.`
+                  : 'Nobody is watching yet.'}{' '}
+                Switching this off removes every spectator and retires the link.
+              </p>
+            </div>
+          ) : (
+            <p className="hint">
+              Creates a second, read-only link for a second screen, a stream, or friends who are not playing.
+            </p>
+          )}
           <button
             className="secondary full"
             disabled={!ready}
@@ -322,7 +423,9 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
                   ? `Requests ${room.seats.find((s) => s.id === m.requestedSeat)?.name}`
                   : m.status === 'approved'
                     ? 'No seat assigned'
-                    : m.status}
+                    : m.status === 'spectator'
+                      ? 'Watching · read only'
+                      : m.status}
             </p>
             {m.requestedSeat && m.seatProfile && (
               <p className="seat-request-preview">
@@ -390,7 +493,7 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
                 </button>
               )}
             </div>
-            {host && m.status !== 'revoked' && (
+            {host && m.status !== 'revoked' && m.status !== 'spectator' && (
               <Field label={`Assign ${m.name} a seat`}>
                 <select
                   disabled={!ready}
@@ -424,7 +527,10 @@ export function RoomSheet({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </section>
-      {!host && (
+      {!host && room.me.status === 'spectator' && (
+        <p className="hint">You are watching this table. Ask the host for the join link to take a seat.</p>
+      )}
+      {!host && room.me.status !== 'spectator' && (
         <p className="hint">
           You can adjust your own seat and view everyone’s information and commanders. Contact the host to
           change seats.

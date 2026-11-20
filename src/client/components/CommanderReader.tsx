@@ -169,7 +169,7 @@ function FullCardImage({ face }: { face: CardDetails['faces'][number] }) {
   );
 }
 
-function CardReading({ query }: { query: string }) {
+export function CardReading({ query }: { query: string }) {
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ details?: CardDetails; error?: string }>(() => ({
     details: cachedReading(query),

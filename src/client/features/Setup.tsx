@@ -1,10 +1,14 @@
 import { useState } from 'react';
-import { ARCHENEMY_LIFE, defaultSetup } from '../../shared/game.js';
+import { ARCHENEMY_LIFE, defaultSetup, GIANT_LIFE, GIANT_POISON, teamName } from '../../shared/game.js';
 import { palettes, setupSchema, type Setup } from '../../shared/schema.js';
 import { useApp, report, startLocal, updateProfile } from '../app/store.js';
 import { Field, Icon, Sheet, Toggle } from '../components/ui.js';
 import { CommanderInput } from '../components/CommanderInput.js';
 import { PlayerNameInput } from '../components/PlayerNameInput.js';
+import { TrackerOptions } from './Trackers.js';
+import { SavedPlayerSelect } from './SavedPlayers.js';
+import { DeckImport, type ImportedCommander } from './DeckImport.js';
+import type { SavedPlayer } from '../storage/repository.js';
 import '../styles/archenemy.css';
 export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose: () => void }) {
   const [setup, setSetup] = useState<Setup>(() => {
@@ -15,10 +19,34 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
   const [busy, setBusy] = useState(false);
   const [displayName, setDisplayName] = useState(() => {
     const saved = useApp.getState().profile.displayName;
-    return /^(?:Host|Player(?: [1-8])?)$/.test(saved) ? '' : saved;
+    return /^(?:Host|Spectator|Player(?: [1-8])?)$/.test(saved) ? '' : saved;
   });
   const settings = setup.settings;
   const archenemyMode = settings.preset === 'Archenemy';
+  const giantMode = settings.preset === 'Two-Headed Giant';
+  type Seat = Setup['seats'][number];
+  const editSeat = (index: number, change: (seat: Seat) => Seat) =>
+    setSetup((s) => ({ ...s, seats: s.seats.map((seat, i) => (i === index ? change(seat) : seat)) }));
+  const fillSeat = (index: number, player: SavedPlayer, keepName = false) =>
+    editSeat(index, (seat) => {
+      const next: Seat = {
+        ...seat,
+        ...(keepName ? {} : { name: player.name }),
+        color: player.color,
+        commanders: [...player.commanders],
+      };
+      if (player.commanderCards) next.commanderCards = [...player.commanderCards];
+      else delete next.commanderCards;
+      if (player.playmat) next.playmat = player.playmat;
+      else delete next.playmat;
+      return next;
+    });
+  const importDeck = (index: number, commanders: ImportedCommander[]) =>
+    editSeat(index, (seat) => ({
+      ...seat,
+      commanders: commanders.map((entry) => entry.name),
+      commanderCards: commanders.map((entry) => entry.card),
+    }));
   const archenemySeat = setup.seats.findIndex((seat) => seat.archenemy);
   const chooseArchenemy = (index: number) =>
     setSetup((s) => ({ ...s, seats: s.seats.map((seat, i) => ({ ...seat, archenemy: i === index })) }));
@@ -26,7 +54,9 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
     setSetup((s) => ({ ...s, settings: { ...s.settings, ...patch } }));
   const count = (n: number) =>
     setSetup((s) => {
-      const seats = Array.from({ length: n }, (_, i) => s.seats[i] ?? defaultSetup(8).seats[i]);
+      const seats = Array.from({ length: n }, (_, i) => s.seats[i] ?? defaultSetup(8).seats[i]).map(
+        (seat, i) => (s.settings.preset === 'Two-Headed Giant' ? { ...seat, team: Math.floor(i / 2) } : seat),
+      );
       // Keep exactly one archenemy when the chosen seat leaves the table.
       if (s.settings.preset === 'Archenemy' && !seats.some((seat) => seat.archenemy))
         seats[0] = { ...seats[0], archenemy: true };
@@ -35,20 +65,39 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
   const preset = (value: Setup['settings']['preset']) =>
     setSetup((s) => {
       const archenemy = value === 'Archenemy';
+      const giant = value === 'Two-Headed Giant';
       const settings: Setup['settings'] = {
         ...s.settings,
         preset: value,
         ...(value === 'Custom'
           ? {}
-          : { startingLife: value === '20-life game' ? 20 : 40, commander: value !== '20-life game' }),
+          : giant
+            ? { startingLife: GIANT_LIFE, poisonThreshold: GIANT_POISON }
+            : { startingLife: value === '20-life game' ? 20 : 40, commander: value !== '20-life game' }),
       };
+      // Leaving Two-Headed Giant returns the shared poison total to the usual ten.
+      if (!giant && s.settings.preset === 'Two-Headed Giant' && settings.poisonThreshold === GIANT_POISON)
+        settings.poisonThreshold = 10;
       if (archenemy) settings.archenemyLife = s.settings.archenemyLife ?? ARCHENEMY_LIFE;
       else delete settings.archenemyLife;
       // Seat 1 starts as the archenemy; choose someone else below.
-      const seats = (archenemy && s.seats.length < 2 ? defaultSetup(4).seats : s.seats).map((seat, index) => {
+      // Two-Headed Giant needs complete teams of two: at least four seats, and an even number.
+      const giantCount = Math.max(4, s.seats.length + (s.seats.length % 2));
+      const source =
+        archenemy && s.seats.length < 2
+          ? defaultSetup(4).seats
+          : giant
+            ? Array.from({ length: giantCount }, (_, i) => s.seats[i] ?? defaultSetup(8).seats[i])
+            : s.seats;
+      const seats = source.map((seat, index) => {
         const team = { ...seat };
         delete team.archenemy;
-        return archenemy ? { ...team, archenemy: index === 0 } : team;
+        delete team.team;
+        return archenemy
+          ? { ...team, archenemy: index === 0 }
+          : giant
+            ? { ...team, team: Math.floor(index / 2) }
+            : team;
       });
       return { settings, seats };
     });
@@ -103,7 +152,7 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
               type="button"
               className={setup.seats.length === i + 1 ? 'selected' : ''}
               aria-pressed={setup.seats.length === i + 1}
-              disabled={archenemyMode && i === 0}
+              disabled={(archenemyMode && i === 0) || (giantMode && (i < 3 || i % 2 === 0))}
               onClick={() => count(i + 1)}
             >
               {i + 1}
@@ -118,6 +167,7 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
             <option>Commander</option>
             <option>20-life game</option>
             <option>Archenemy</option>
+            <option>Two-Headed Giant</option>
             <option>Custom</option>
           </select>
         </Field>
@@ -159,7 +209,37 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
             </Field>
           </fieldset>
         )}
-        <Field label={archenemyMode ? 'Team starting life' : 'Starting life'}>
+        {giantMode && (
+          <fieldset className="archenemy-setup">
+            <legend>Teams of two</legend>
+            <p className="hint">
+              Teammates sit side by side and share one life total, one poison total and one turn. A change on
+              either seat counts for both. Commander teams usually start at 60.
+            </p>
+            <ul className="hint">
+              {Array.from({ length: setup.seats.length / 2 }, (_, team) => (
+                <li key={team}>
+                  <strong>{teamName(team)}:</strong>{' '}
+                  {[0, 1]
+                    .map((head) => {
+                      const index = team * 2 + head;
+                      return mode === 'room'
+                        ? index === 0
+                          ? 'You'
+                          : `Seat ${index + 1}`
+                        : setup.seats[index]?.name.trim() || `Player ${index + 1}`;
+                    })
+                    .join(' & ')}
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+        )}
+        <Field
+          label={
+            archenemyMode ? 'Team starting life' : giantMode ? 'Starting life for each team' : 'Starting life'
+          }
+        >
           <input
             type="number"
             inputMode="numeric"
@@ -181,8 +261,17 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
               onChange={setDisplayName}
               disabled={busy}
             />
+            <SavedPlayerSelect
+              label="Use a saved player"
+              disabled={busy}
+              onPick={(player) => {
+                setDisplayName(player.name);
+                fillSeat(0, player, true);
+              }}
+            />
             {settings.commander && (
               <>
+                <DeckImport disabled={busy} onImport={(commanders) => importDeck(0, commanders)} />
                 {setup.seats[0].commanders.map((label, index) => (
                   <CommanderInput
                     key={index}
@@ -243,6 +332,11 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
               {setup.seats.map((seat, i) => (
                 <div className="seat-form" key={i}>
                   <span className={`palette-dot ${seat.color}`} />
+                  <SavedPlayerSelect
+                    label={`Seat ${i + 1} saved player`}
+                    disabled={busy}
+                    onPick={(player) => fillSeat(i, player)}
+                  />
                   <PlayerNameInput
                     label={`Seat ${i + 1} name`}
                     value={seat.name}
@@ -306,6 +400,7 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
                           <option value="2">Two commanders / partners</option>
                         </select>
                       </Field>
+                      <DeckImport disabled={busy} onImport={(commanders) => importDeck(i, commanders)} />
                       {seat.commanders.map((label, k) => (
                         <CommanderInput
                           key={k}
@@ -368,6 +463,10 @@ export function SetupSheet({ mode, onClose }: { mode: 'local' | 'room'; onClose:
               onChange={(e) => change({ commanderThreshold: e.target.valueAsNumber })}
             />
           </Field>
+          <TrackerOptions
+            value={settings}
+            onChange={(next) => change({ counters: next.counters, markerTrackers: next.markerTrackers })}
+          />
           <p className="hint">
             These are manual trackers. Presets do not enforce deck legality or decide game outcomes.
           </p>

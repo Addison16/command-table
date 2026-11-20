@@ -34,7 +34,7 @@ Settled decisions:
 - 2–8 normal seats plus a 1-seat practice mode.
 - Home offers **Quick 4 · 40 life** (Commander) as the primary action and **Quick 2 · 20 life** (commander tools off). **Set up a game** opens full setup.
 - iPhone Safari and Android Chrome are the primary targets. Other mobile browsers, tablets and desktop browsers must also work.
-- Complete features: life, poison, per-commander damage and tax, 3D dice and coin, first-player selection, opt-in turn tracking, a game timer, group life changes (one device), end/reopen/rematch, game recaps, and optional commander artwork, card text and rulings.
+- Complete features: life, poison, per-commander damage and tax, 3D dice and coin, first-player selection, opt-in turn tracking, a game timer, group life changes, Two-Headed Giant, Planechase, optional trackers, recorded winners and playgroup stats, saved players, spectator links, end/reopen/rematch, game recaps with a life graph, and optional commander artwork, card text and rulings.
 - No accounts, analytics, hardware fingerprinting or IP-based identity. Games resume from the same browser profile at the same site address.
 - Warnings never eliminate anyone. Command Table is a manual tracker, not a rules engine; elimination and rules decisions stay with the players.
 - The design is an original arcane fantasy style influenced by Magic's colors and tabletop atmosphere. Card artwork appears only when a player chooses it from Scryfall.
@@ -103,7 +103,7 @@ Exact-value drafts stay in their fields until the save is confirmed, and a rejec
 ### Utilities, Game menu and Settings
 
 - **Utilities** ("A little luck & magic"): roll dice and flip a coin for a chosen player or the table, **Group life change**, **Who goes first?**, recent rolls with replay, the turn-tracking toggle and current player, and the game timer.
-- **Game menu** ("Around the table"): table layout, game history (with **Redo** in one-device games), **Share game recap**, display and preferences, **Room & players** in rooms, export and import, **Rematch · same seats**, **New game · change setup**, **End game**, archived games, tab takeover, and **Continue a copy on this device** in rooms.
+- **Game menu** ("Around the table"): table layout, game history (with **Redo** in one-device games, and in rooms right after your own undo), **Record winner**, **Playgroup stats**, **Share game recap**, display and preferences, **Room & players** in rooms, export and import, **Rematch · same seats**, **New game · change setup**, **End game**, archived games, tab takeover, and **Continue a copy on this device** in rooms.
 - **Settings** ("Your table, your way"): appearance, table layout, effects level, sound with **Test dice sound**, haptics, keep the screen awake, fullscreen, home-screen installation help, the storage note and the Fan Content notice.
 
 ### Shared-room lobby and participation
@@ -165,15 +165,25 @@ The board's **Damage** shortcut remembers the last source chosen for each seat o
 
 Command-zone casts are stored per commander. The additional cost of the next cast is `2 × previous casts`, shown as **Next cast: +N additional mana**. **Tax** shortcuts record a cast; **Correct casts** sets the count. Casts from other zones are not tracked.
 
-### Group life change (one device)
+### Group life change
 
-**Utilities → Group life change**: choose the caster; every other active player is selected initially and can be deselected. Enter the life each opponent loses and, optionally, the total life the caster gains. Gain is never guessed or multiplied. Review each before/after total, then apply. The whole effect is one command and one Undo. It is unavailable in shared rooms, where each player records their own life.
+**Utilities → Group life change**: choose the caster; every other active player is selected initially and can be deselected. Enter the life each opponent loses and, optionally, the total life the caster gains. Gain is never guessed or multiplied. Review each before/after total, then apply. The whole effect is one command and one Undo. In shared rooms only the host may apply it (and undo it); every other life change still belongs to the seat's own player.
 
-### Turns, timer and legacy trackers
+### Turns, timer and optional trackers
 
 Turn tracking is off by default. When enabled (host-controlled in rooms) it shows **Next turn** beside Undo and a current-player choice in Utilities. Confirming a first-player result sets the turn only when tracking is on. The game timer derives elapsed time from start/pause timestamps; room clients estimate the server clock offset so phones with different clocks agree.
 
-Named manual counters (energy, experience and so on) and the Monarch/Initiative markers still exist in the schema so older games stay readable. They are displayed when present, but the Extra trackers UI was removed and new games do not enable them.
+`turn.startedAt` times the current turn; the active seat shows a turn clock that restarts on **Next turn**.
+
+Named manual counters (Energy, Experience, Rad, Tickets, The Ring, City’s blessing or any short name) and the Monarch, Initiative and Day/Night markers are **Optional trackers**: off in new games, chosen in setup or Utilities (host-controlled in rooms), and collapsed until wanted. A counter shows on a seat once it is above zero. Room players may claim or release a marker for their own seat; the host may move any marker.
+
+### Two-Headed Giant, Planechase and recorded results
+
+**Two-Headed Giant** stores `teams` (pairs of player IDs). The reducer applies life and poison changes to both teammates, eliminates and restores them together, and advances the turn by team. Defaults are 30 life and 15 poison. It cannot be combined with Archenemy.
+
+**Planechase** stores a shared `planechase` deck of plane IDs with a position, current plane, last die face and rolls this turn. `shufflePlanes` and `endPlanechase` are host table controls; `planarDie` and `planeswalk` belong to any seated player. Die faces are rolled by the reducer's caller the same way dice are (server-side in rooms). Plane names live in `src/shared/planeIndex.ts`; rules text and Scryfall IDs in `src/shared/planeCards.ts` load on demand. Regenerate both with `node scripts/generate-planes.mjs`.
+
+`declareWinner` stores `result` (winners or a draw) on the game. `lifeLog` keeps up to 240 life snapshots for the recap graph. Finished games are summarized into a browser-local stats store; nothing is sent to the server.
 
 ### Undo, history, ending and rematches
 
@@ -344,7 +354,7 @@ Imports are limited to 2 MB and checked for schema version, structure, integer b
 - `localStorage` keys `command-table-appearance` and `command-table-style`.
 - Historical appearance IDs: `theme` displays Gold, `gold` displays Red, `glow` is Astral silk, `tabletop` is Dragonfire and `obsidian` is Stormglass.
 
-The GitHub repository stays `Addison16/commanders-table`. `ghcr.io/addison16/commandtable` is the primary image, with `commanders-table` kept as a compatibility image name.
+The GitHub repository is `Addison16/command-table` (formerly `commanders-table`; old links redirect). `ghcr.io/addison16/commandtable` is the primary image, with `commanders-table` kept as a compatibility image name.
 
 ## 9. Persistence and synchronization contracts
 
@@ -439,7 +449,7 @@ Record each verification with its date, counts, failures and deployment state in
 
 ## 13. Not built: later additions
 
-Accounts and cross-device personal history; cloud sync of local games; deck integrations; full team formats including Two-Headed Giant; tournament or match statistics; advanced mana, storm and phase tools; dungeon and Planechase assistance; spectator links; an in-app QR scanner; shared redo; and multi-instance or network-filesystem hosting.
+Accounts and cross-device personal history; cloud sync of local games; full deck-list integrations beyond importing a commander; team formats beyond Archenemy and Two-Headed Giant; server-side or cross-device statistics; advanced mana, storm and phase tools; dungeon assistance; and multi-instance or network-filesystem hosting.
 
 Keep stable IDs, the shared domain, versioned storage and clear membership boundaries so these remain possible. Do not build speculative frameworks for them.
 
@@ -452,10 +462,12 @@ These decisions were made during development, mostly at the owner's request, and
 | Host can manage every seat in a room; optional "Friends can edit every seat" policy | Every approved player, including the host, edits only their own seat. The policy was removed: legacy values are ignored and enabling it is rejected. |
 | Host status never transfers automatically | It still never transfers on disconnect. When the host's session expires, cleanup promotes the longest-seated approved member. |
 | Include the recipient's own commander among damage sources | Own commanders are excluded and the reducer rejects them. |
-| Extra trackers (energy/experience/rad/custom counters, Monarch/Initiative) in Utilities | Removed from the UI. Legacy data is still read and displayed. |
+| Extra trackers (energy/experience/rad/custom counters, Monarch/Initiative) in Utilities | Removed in September, then restored in November as **Optional trackers**: off by default and collapsed, with Day/Night added. |
+| Group life change on one device only | Also available to the host of a shared room. |
+| Spectator links, in-app QR scanner, shared redo, Two-Headed Giant, Planechase, statistics and deck links listed as later additions | Built in November: read-only spectator links the host can switch off, a camera scanner on the join screen, redo right after your own undo, the Two-Headed Giant preset, a shared planar deck and die, browser-local playgroup stats, and commander import from public Archidekt links. |
 | Turn highlight and timer always available | Turn tracking is opt-in with **Next turn** beside Undo. The timer is in Utilities. |
 | Home with One device / Shared room cards | Quick 4 and Quick 2 starts plus Create/Join room on one screen; **New game** asks One phone or Multiple phones. |
-| Shared undo by the host regardless of actor | Undo is limited to the actor's own eligible action, plus the host's own table-control actions. |
+| Shared undo by the host regardless of actor | Undo is limited to the actor's own eligible action, plus the host's own table-control actions. Redo is offered only immediately after your own undo. |
 | CSS/SVG dice with Motion; 3D optional | Canvas2D 3D dice with rigid-body physics and no animation library. Motion for React, CSS Modules and React Testing Library were not adopted. |
 | Searchable cards and art as a later addition | Optional Scryfall artwork, card reader and rulings are built in. |
 | Single theme | Light/dark/system appearance with themes, accents, table finishes and coordinated looks. |

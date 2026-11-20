@@ -3,6 +3,7 @@ import {
   gameSchema,
   setupSchema,
   LIMIT,
+  MAX_LIFE_LOG,
   MAX_ONGOING_SCHEMES,
   palettes,
   type Change,
@@ -12,6 +13,7 @@ import {
   type Setup,
 } from './schema.js';
 import { nextSchemeIndex, schemeCard, schemeCards, shuffleSchemeDeck } from './schemes.js';
+import { planarFaces, planeEntry, shufflePlanarDeck } from './planes.js';
 
 export type Context = {
   id: string;
@@ -24,6 +26,9 @@ export type Context = {
   newGameId?: string;
   /** A freshly shuffled scheme deck, drawn by whoever applies the command (like a roll). */
   schemeDeck?: string[];
+  /** A freshly shuffled planar deck, and the face a planar die landed on (0–5). */
+  planarDeck?: string[];
+  planarRoll?: number;
 };
 export const GAME_RECOVERY_MS = 24 * 60 * 60 * 1000;
 export function recoveryDeadline(game: Game): number | null {
@@ -61,11 +66,57 @@ export function archenemySetup(count = 4, archenemySeat = 0): Setup {
   setup.seats = setup.seats.map((seat, index) => ({ ...seat, archenemy: index === archenemySeat }));
   return setup;
 }
+export const GIANT_LIFE = 30;
+export const GIANT_POISON = 15;
+/** Two-Headed Giant: seats pair off in order, and each pair shares life, poison and a turn. */
+export function twoHeadedGiantSetup(count = 4): Setup {
+  const setup = defaultSetup(Math.max(4, count - (count % 2)));
+  setup.settings.preset = 'Two-Headed Giant';
+  setup.settings.startingLife = GIANT_LIFE;
+  setup.settings.poisonThreshold = GIANT_POISON;
+  setup.seats = setup.seats.map((seat, index) => ({ ...seat, team: Math.floor(index / 2) }));
+  return setup;
+}
+/** Everyone who shares this player's life total, including the player. */
+export function teammates(game: Pick<Game, 'teams'>, playerId: string): string[] {
+  return game.teams?.find((team) => team.includes(playerId)) ?? [playerId];
+}
+export function teamIndex(game: Pick<Game, 'teams'>, playerId: string) {
+  return game.teams ? game.teams.findIndex((team) => team.includes(playerId)) : -1;
+}
+export const teamName = (index: number) => `Team ${'ABCD'[index] ?? index + 1}`;
+/** True while the turn belongs to this seat, its Two-Headed Giant team, or the Archenemy team. */
+export function sharesTurn(game: Game, playerId: string) {
+  const current = game.turn.playerId;
+  if (!current) return false;
+  if (current === playerId) return true;
+  if (game.teams) return teammates(game, current).includes(playerId) && !game.players[playerId].eliminated;
+  return isTeamTurn(game) && game.archenemy?.playerId !== playerId && !game.players[playerId].eliminated;
+}
+/**
+ * Who has won, if the table's eliminations already settle it: the last player or
+ * team standing, or the Archenemy outcome. Alternate wins are recorded by hand.
+ */
+export function standingWinners(game: Game): string[] {
+  if (game.order.length < 2) return [];
+  const outcome = archenemyOutcome(game);
+  if (outcome === 'team') return teamOf(game);
+  if (outcome === 'archenemy') return [game.archenemy!.playerId];
+  if (game.archenemy) return [];
+  const standing = game.order.filter((id) => !game.players[id].eliminated);
+  if (!standing.length) return [];
+  const side = teammates(game, standing[0]);
+  return standing.every((id) => side.includes(id)) ? side : [];
+}
 export function isArchenemy(game: Game, playerId: string | null | undefined) {
   return !!game.archenemy && game.archenemy.playerId === playerId;
 }
 /** Players on the other side of the table. Without Archenemy, everyone else is an opponent. */
 export function opponentsOf(game: Game, playerId: string) {
+  if (game.teams) {
+    const side = teammates(game, playerId);
+    return game.order.filter((id) => !side.includes(id));
+  }
   if (!game.archenemy) return game.order.filter((id) => id !== playerId);
   return isArchenemy(game, playerId) ? game.order.filter((id) => id !== playerId) : [game.archenemy.playerId];
 }
@@ -82,6 +133,10 @@ export function archenemyOutcome(game: Game): 'team' | 'archenemy' | null {
 /** Who can take the next turn. In Archenemy the team shares one turn, recorded on its first active player. */
 export function turnOrder(game: Game) {
   const active = game.order.filter((id) => !game.players[id].eliminated);
+  if (game.teams)
+    return game.teams
+      .map((team) => team.find((id) => active.includes(id)))
+      .filter((id): id is string => !!id);
   if (!game.archenemy) return active;
   const villain = game.archenemy.playerId;
   return [active.find((id) => id === villain), active.find((id) => id !== villain)].filter(
@@ -104,6 +159,8 @@ export function setupFromGame(game: Game): Setup {
         color: game.players[id].color,
         commanders: commanders.map((commander) => commander.label),
         ...(game.archenemy ? { archenemy: isArchenemy(game, id) } : {}),
+        ...(game.teams ? { team: teamIndex(game, id) } : {}),
+        ...(game.players[id].playmat ? { playmat: structuredClone(game.players[id].playmat) } : {}),
         ...(commanders.some((commander) => commander.card)
           ? {
               commanderCards: commanders.map((commander) =>
@@ -136,6 +193,7 @@ export function createGame(input: Setup, id: () => string, now: number): Game {
     undo: [],
     redo: [],
   };
+  const teamSlots = new Map<number, number>();
   for (const seat of setup.seats) {
     const pid = id();
     game.order.push(pid);
@@ -147,11 +205,18 @@ export function createGame(input: Setup, id: () => string, now: number): Game {
       poison: 0,
       counters: {},
       eliminated: false,
+      ...(seat.playmat ? { playmat: seat.playmat } : {}),
     };
+    if (seat.team !== undefined) {
+      // Team numbers may skip; teams keep the order in which they first appear.
+      if (!teamSlots.has(seat.team)) teamSlots.set(seat.team, teamSlots.size);
+      game.teams ??= [];
+      (game.teams[teamSlots.get(seat.team)!] ??= []).push(pid);
+    }
     // The archenemy always takes the first turn.
     if (seat.archenemy) {
       game.archenemy = { playerId: pid, schemes: 0, ongoing: [] };
-      game.turn = { playerId: pid, number: 1 };
+      game.turn = { playerId: pid, number: 1, startedAt: now };
     }
     for (const [index, label] of seat.commanders.entries()) {
       const cid = id();
@@ -159,6 +224,7 @@ export function createGame(input: Setup, id: () => string, now: number): Game {
       game.commanders[cid] = { id: cid, ownerId: pid, label, casts: 0, ...(card ? { card } : {}) };
     }
   }
+  game.lifeLog = [{ t: now, l: game.order.map((pid) => game.players[pid].life) }];
   return game;
 }
 function core(g: Game) {
@@ -173,6 +239,8 @@ function core(g: Game) {
     status: g.status,
     endedAt: g.endedAt,
     archenemy: g.archenemy,
+    result: g.result,
+    planechase: g.planechase,
   };
 }
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -215,11 +283,33 @@ function bounded(n: number, min = 0) {
     throw new Error(`Use a whole number between ${min.toLocaleString()} and ${LIMIT.toLocaleString()}`);
   return n;
 }
+/** One point per change in anyone's life. Quick runs of taps collapse into their last value. */
+function logLife(previous: Game, g: Game, now: number) {
+  const life = g.order.map((id) => g.players[id].life);
+  const log = g.lifeLog ?? [
+    { t: Math.min(now, previous.timer.startedAt), l: previous.order.map((id) => previous.players[id].life) },
+  ];
+  const last = log.at(-1)!;
+  if (equal(last.l, life)) {
+    g.lifeLog = log;
+    return;
+  }
+  if (log.length > 1 && now - last.t < 1500) log[log.length - 1] = { t: last.t, l: life };
+  else log.push({ t: Math.max(now, last.t), l: life });
+  // A very long game keeps its shape: thin the older half instead of dropping the start.
+  if (log.length > MAX_LIFE_LOG) {
+    const half = Math.floor(log.length / 2);
+    g.lifeLog = [...log.slice(0, half).filter((_, index) => index % 2 === 0), ...log.slice(half)];
+  } else g.lifeLog = log;
+}
 export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
   const c = commandSchema.parse(input),
     g = structuredClone(previous),
     groupId = c.type === 'groupLife' ? undefined : ctx.groupId;
-  if (g.status === 'ended' && !['rematch', 'reopen', 'undo', 'redo', 'roll'].includes(c.type))
+  if (
+    g.status === 'ended' &&
+    !['rematch', 'reopen', 'undo', 'redo', 'roll', 'declareWinner'].includes(c.type)
+  )
     throw new Error('This game has ended. Start a rematch to play again.');
   const p = 'playerId' in c && c.playerId ? g.players[c.playerId] : undefined;
   if ('playerId' in c && c.playerId && !p) throw new Error('Unknown player');
@@ -240,6 +330,9 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
         old = values[c.field] ?? 0;
       const next = bounded(c.type === 'adjust' ? old + c.delta : c.value, c.field === 'life' ? -LIMIT : 0);
       values[c.field] = next;
+      // A Two-Headed Giant team has one life total and one poison total.
+      if (c.field === 'life' || c.field === 'poison')
+        for (const id of teammates(g, p!.id)) g.players[id][c.field] = next;
       summary =
         c.type === 'set'
           ? `${p!.name} set ${c.field} to ${next}`
@@ -255,11 +348,20 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
         if (!target) throw new Error('Unknown opponent');
         if (g.archenemy && !opponentsOf(g, c.casterId).includes(id))
           throw new Error('Teammates are not opponents in Archenemy. Choose the archenemy.');
+        if (g.teams && !opponentsOf(g, c.casterId).includes(id))
+          throw new Error('Teammates are not opponents. Choose players on another team.');
         if (target.eliminated) throw new Error('Choose opponents still in the game');
         return target;
       });
-      for (const target of targets) target.life = bounded(target.life - c.loss, -LIMIT);
-      if (c.gain) caster.life = bounded(caster.life + c.gain, -LIMIT);
+      // Each affected head costs its team the loss, so two heads lose it twice.
+      for (const target of targets) {
+        const life = bounded(target.life - c.loss, -LIMIT);
+        for (const id of teammates(g, target.id)) g.players[id].life = life;
+      }
+      if (c.gain) {
+        const life = bounded(caster.life + c.gain, -LIMIT);
+        for (const id of teammates(g, caster.id)) g.players[id].life = life;
+      }
       summary = `${caster.name}: ${targets.length} opponent${targets.length === 1 ? '' : 's'} lost ${c.loss} life each${c.gain ? `; gained ${c.gain} life` : ''}`;
       break;
     }
@@ -270,7 +372,10 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       g.damageReceived[p!.id] ??= {};
       const old = g.damageReceived[p!.id][commander!.id] ?? 0;
       g.damageReceived[p!.id][commander!.id] = bounded(c.type === 'damage' ? old + c.amount : c.value);
-      if (c.type === 'damage' && c.subtractLife) p!.life = bounded(p!.life - c.amount, -LIMIT);
+      if (c.type === 'damage' && c.subtractLife) {
+        const life = bounded(p!.life - c.amount, -LIMIT);
+        for (const id of teammates(g, p!.id)) g.players[id].life = life;
+      }
       summary =
         c.type === 'damage'
           ? `${p!.name} took ${c.amount} combat damage from ${g.players[commander!.ownerId].name}'s ${commander!.label}${c.subtractLife ? `; life −${c.amount}` : ''}`
@@ -303,6 +408,8 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
         if (entry.card) target.card = entry.card;
         else delete target.card;
       }
+      if (c.playmat) p!.playmat = c.playmat;
+      else if (c.playmat === null) delete p!.playmat;
       summary = `${c.name} updated their player and commanders`;
       break;
     }
@@ -313,8 +420,12 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       summary = `Commander renamed to ${c.label}`;
       break;
     case 'eliminate': {
-      p!.eliminated = c.eliminated;
-      summary = `${p!.name} ${c.eliminated ? 'was eliminated' : 'returned to the game'}`;
+      // Both heads of a Two-Headed Giant team leave, and return, together.
+      const side = teammates(g, p!.id);
+      for (const id of side) g.players[id].eliminated = c.eliminated;
+      summary = `${side.map((id) => g.players[id].name).join(' & ')} ${
+        c.eliminated ? (side.length > 1 ? 'were eliminated' : 'was eliminated') : 'returned to the game'
+      }`;
       const outcome = c.eliminated ? archenemyOutcome(g) : null;
       if (outcome === 'team') summary += '. The team defeated the archenemy!';
       if (outcome === 'archenemy') summary += '. The archenemy has conquered the team!';
@@ -378,15 +489,78 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       break;
     }
     case 'marker':
+      if (p?.eliminated) throw new Error('Choose a player still in the game');
       g.markers[c.marker] = c.playerId;
-      summary = `${c.marker}: ${p?.name ?? 'cleared'}`;
+      summary = p
+        ? `${p.name} ${c.marker === 'monarch' ? 'became the monarch' : 'took the initiative'}`
+        : `${c.marker === 'monarch' ? 'The monarch' : 'The initiative'} was cleared`;
+      break;
+    case 'dayNight':
+      if (c.value) g.markers.dayNight = c.value;
+      else delete g.markers.dayNight;
+      summary = c.value ? `It became ${c.value}` : 'Day and night were cleared';
+      break;
+    case 'declareWinner': {
+      if (c.winners.some((id) => !g.players[id])) throw new Error('Unknown player');
+      if (!c.winners.length && !c.draw) delete g.result;
+      else g.result = { winners: c.draw ? [] : c.winners, ...(c.draw ? { draw: true } : {}) };
+      summary = c.draw
+        ? 'The game was recorded as a draw'
+        : c.winners.length
+          ? `${c.winners.map((id) => g.players[id].name).join(' & ')} recorded as the winner${c.winners.length > 1 ? 's' : ''}`
+          : 'The recorded winner was cleared';
+      break;
+    }
+    case 'shufflePlanes': {
+      if (!ctx.planarDeck?.length) throw new Error('Missing shuffled planar deck');
+      // The first plane is turned face up as the game begins.
+      g.planechase = {
+        deck: ctx.planarDeck,
+        position: 1 % ctx.planarDeck.length,
+        current: ctx.planarDeck[0],
+        sets: c.sets,
+        die: null,
+        rolls: 0,
+      };
+      summary = `Planechase began on ${planeEntry(ctx.planarDeck[0])?.name ?? 'a new plane'} (${ctx.planarDeck.length}-card planar deck)`;
+      break;
+    }
+    case 'planeswalk': {
+      if (!g.planechase) throw new Error('Shuffle the planar deck first');
+      const { deck, position } = g.planechase;
+      // The plane left behind is already at the bottom: the deck is a cycle.
+      g.planechase.current = deck[position % deck.length];
+      g.planechase.position = (position + 1) % deck.length;
+      g.planechase.die = null;
+      g.planechase.rolls = 0;
+      summary = `The table planeswalked to ${planeEntry(g.planechase.current)?.name ?? 'a new plane'}`;
+      break;
+    }
+    case 'planarDie': {
+      if (!g.planechase) throw new Error('Shuffle the planar deck first');
+      if (ctx.planarRoll === undefined) throw new Error('Missing recorded planar die roll');
+      const face = planarFaces[ctx.planarRoll % planarFaces.length];
+      g.planechase.die = face;
+      g.planechase.rolls = bounded(g.planechase.rolls + 1);
+      summary = `${ctx.actor === 'This device' ? 'The planar die' : `${ctx.actor}’s planar die`} came up ${
+        face === 'blank' ? 'blank' : face === 'chaos' ? 'chaos' : 'planeswalk'
+      }`;
+      break;
+    }
+    case 'endPlanechase':
+      if (!g.planechase) throw new Error('Planechase is not in use');
+      delete g.planechase;
+      summary = 'The planar deck was put away';
       break;
     case 'turn':
       if (p?.eliminated) throw new Error('Choose a player still in the game');
       g.turn = {
         playerId: c.playerId,
         number: c.advance ? bounded(g.turn.number + 1) : c.playerId ? Math.max(1, g.turn.number) : 0,
+        ...(c.playerId ? { startedAt: ctx.now } : {}),
       };
+      // Each turn starts with a fresh count of planar die rolls.
+      if (g.planechase && c.advance) g.planechase.rolls = 0;
       summary = `Turn ${g.turn.number}: ${p?.name ?? 'cleared'}`;
       break;
     case 'turnTracking':
@@ -397,6 +571,12 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       if (c.action === 'pause' && g.timer.pausedAt === null) g.timer.pausedAt = ctx.now;
       if (c.action === 'resume' && g.timer.pausedAt !== null) {
         g.timer.pausedMs += Math.max(0, ctx.now - g.timer.pausedAt);
+        // The turn clock stops with the timer, so the pause is not part of the turn.
+        if (g.turn.startedAt !== undefined)
+          g.turn.startedAt = Math.min(
+            ctx.now,
+            g.turn.startedAt + Math.max(0, ctx.now - Math.max(g.timer.pausedAt, g.turn.startedAt)),
+          );
         g.timer.pausedAt = null;
       }
       summary = `Timer ${c.action === 'pause' ? 'paused' : 'resumed'}`;
@@ -433,7 +613,24 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       for (const cmdr of Object.values(g.commanders)) cmdr.casts = 0;
       g.damageReceived = {};
       g.markers = { monarch: null, initiative: null };
-      g.turn = g.archenemy ? { playerId: g.archenemy.playerId, number: 1 } : { playerId: null, number: 0 };
+      g.turn = g.archenemy
+        ? { playerId: g.archenemy.playerId, number: 1, startedAt: ctx.now }
+        : { playerId: null, number: 0 };
+      delete g.result;
+      if (g.planechase) {
+        const { sets } = g.planechase;
+        if (ctx.planarDeck?.length)
+          g.planechase = {
+            deck: ctx.planarDeck,
+            position: 1 % ctx.planarDeck.length,
+            current: ctx.planarDeck[0],
+            sets,
+            die: null,
+            rolls: 0,
+          };
+        else delete g.planechase;
+      }
+      g.lifeLog = [{ t: ctx.now, l: g.order.map((id) => startingLife(g.settings, isArchenemy(g, id))) }];
       if (g.archenemy) {
         const { playerId, sets } = g.archenemy;
         // A rematch reshuffles the same sets when the caller supplied a fresh deck.
@@ -473,6 +670,7 @@ export function reduceGame(previous: Game, input: Command, ctx: Context): Game {
       break;
   }
   g.revision++;
+  if (c.type !== 'rematch') logLife(previous, g, ctx.now);
   if (!['undo', 'redo', 'rematch', 'roll'].includes(c.type)) {
     const changes = diff(core(previous), core(g));
     if (!changes.length) throw new Error('No change to record');
@@ -544,6 +742,14 @@ export function makeSchemeDeck(g: Game, c: Command, rng: (max: number) => number
   if (c.type === 'rematch' && g.archenemy?.sets) return shuffleSchemeDeck(g.archenemy.sets, rng);
   return undefined;
 }
+export function makePlanarDeck(g: Game, c: Command, rng: (max: number) => number): string[] | undefined {
+  if (c.type === 'shufflePlanes') return shufflePlanarDeck(c.sets, rng);
+  if (c.type === 'rematch' && g.planechase) return shufflePlanarDeck(g.planechase.sets, rng);
+  return undefined;
+}
+export function makePlanarRoll(c: Command, rng: (max: number) => number): number | undefined {
+  return c.type === 'planarDie' ? rng(planarFaces.length) : undefined;
+}
 export function makeRoll(
   g: Game,
   c: Extract<Command, { type: 'roll' }>,
@@ -562,8 +768,19 @@ export function makeRoll(
     winner: null,
     at: ctx.now,
     actor: ctx.actor,
-    ...((c.kind === 'dice' || c.kind === 'coin') && c.playerId ? { playerId: c.playerId } : {}),
+    ...((c.kind === 'dice' || c.kind === 'coin' || c.kind === 'opponent') && c.playerId
+      ? { playerId: c.playerId }
+      : {}),
   };
+  if (c.kind === 'opponent') {
+    if (!c.playerId) throw new Error('Choose who is picking an opponent');
+    const opponents = opponentsOf(g, c.playerId).filter((id) => !g.players[id].eliminated);
+    if (!opponents.length) throw new Error('No opponents are left to choose from');
+    roll.sides = 20;
+    roll.candidates = opponents;
+    roll.winner = opponents[rng(opponents.length)];
+    return roll;
+  }
   if (c.kind === 'dice') roll.values = Array.from({ length: c.count }, () => rng(c.sides) + 1);
   if (c.kind === 'coin') {
     roll.sides = 2;
@@ -588,7 +805,7 @@ export function makeRoll(
   return roll;
 }
 export function isRelative(c: Command) {
-  return ['adjust', 'damage', 'cast', 'roll', 'scheme', 'revealScheme'].includes(c.type);
+  return ['adjust', 'damage', 'cast', 'roll', 'scheme', 'revealScheme', 'planarDie'].includes(c.type);
 }
 export function commandSeat(g: Game, c: Command): string | undefined {
   if (['scheme', 'revealScheme', 'shuffleSchemes', 'abandonScheme'].includes(c.type))

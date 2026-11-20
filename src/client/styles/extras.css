@@ -1,0 +1,413 @@
+@layer components {
+  /* Optional trackers: chosen in setup or Utilities, off until the table wants them. */
+  .tracker-options {
+    display: grid;
+    gap: 10px;
+    margin: 10px 0;
+  }
+  .tracker-chips,
+  .saved-players,
+  .winner-choices,
+  .plane-sets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .tracker-chips button,
+  .saved-players button {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 20px;
+  }
+  .tracker-custom {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+  }
+  .tracker-custom .field {
+    flex: 1;
+    margin: 0;
+  }
+  .day-night,
+  .marker-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    margin: 10px 0;
+  }
+  .day-night button,
+  .marker-actions button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .team-mark {
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-radius: 20px;
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    line-height: 1.2;
+  }
+  .lobby-seat .team-mark {
+    margin-left: 8px;
+    color: var(--muted);
+  }
+  .turn-clock {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Small table-wide notes beside the seat count: day or night, the current plane. */
+  .table-chips {
+    display: inline-flex;
+    gap: 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .table-chips button {
+    display: inline-block;
+    min-width: 0;
+    min-height: 26px;
+    padding: 3px 8px;
+    border: 1px solid var(--accent-line);
+    border-radius: 20px;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font: inherit;
+    letter-spacing: 0.6px;
+    max-width: 34vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Playgroup stats */
+  .stat-tiles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .stat-tiles > div {
+    display: grid;
+    gap: 2px;
+    padding: 12px 8px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    text-align: center;
+  }
+  .stat-tiles strong {
+    color: var(--gold);
+    font-size: 26px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-tiles span {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .stats-table th,
+  .stats-table td {
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .stats-table th {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+  }
+  .stats-table th:first-child,
+  .stats-table td:first-child {
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .stat-record {
+    display: grid;
+    gap: 6px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .stat-record small {
+    color: var(--muted);
+  }
+  .stat-record .field {
+    margin: 0;
+  }
+  .stat-record-actions {
+    display: flex;
+    align-items: end;
+    gap: 8px;
+  }
+  .stat-record-actions .field {
+    flex: 1;
+  }
+  .winner-choices label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border: 1px solid var(--control-line);
+    border-radius: 20px;
+    background: var(--control-background);
+    font-size: 13px;
+  }
+  .winner-choices label:has(input:checked) {
+    border-color: var(--gold);
+    color: var(--accent-text);
+  }
+
+  /* Saved regulars */
+  .saved-players {
+    margin: 8px 0 12px;
+  }
+  .saved-player-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .saved-player-row > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .saved-player-row small {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .saved-player-row button {
+    padding: 8px;
+  }
+
+  /* Planechase */
+  .plane-face {
+    overflow: hidden;
+    margin: 14px 0 6px;
+    border: 1px solid var(--accent-line-strong);
+    border-radius: 16px;
+    background: linear-gradient(160deg, var(--accent-soft), var(--surface));
+    box-shadow: 0 12px 30px rgb(0 0 0 / 28%);
+  }
+  .plane-face.phenomenon {
+    border-color: var(--status-poison);
+  }
+  .plane-image {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: var(--surface-inset);
+  }
+  .plane-face-text {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px 14px;
+  }
+  .plane-face-text h3 {
+    margin: 0;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+  .plane-face-text p {
+    margin: 0;
+    color: var(--soft-text);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-line;
+  }
+  .plane-type {
+    color: var(--accent-text);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+  }
+  .planar-die {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 14px;
+    margin: 12px 0;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+  .planar-die-face {
+    display: grid;
+    place-items: center;
+    width: 62px;
+    height: 62px;
+    border: 1px solid var(--accent-line-strong);
+    border-radius: 14px;
+    background: var(--surface-inset);
+    color: var(--muted);
+    font-size: 28px;
+  }
+  .planar-die[data-face='chaos'] .planar-die-face,
+  .planar-die[data-face='planeswalk'] .planar-die-face {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+  .planar-die strong {
+    display: block;
+    font-size: 15px;
+  }
+  .planar-die small {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .plane-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .plane-sets label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font-size: 13px;
+  }
+  .plane-sets small {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  /* Card lookup */
+  .card-lookup-form {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+  }
+  .card-lookup-form .field {
+    flex: 1;
+    margin: 0;
+  }
+  .card-lookup-names {
+    display: grid;
+    gap: 4px;
+    margin: 8px 0;
+    padding: 0;
+    list-style: none;
+  }
+  .card-lookup-names button {
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 13px;
+  }
+
+  /* Seat background */
+  .seat-background-photo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0;
+  }
+  .seat-background-photo img {
+    width: 96px;
+    height: 54px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    object-fit: cover;
+  }
+
+  /* Deck link import */
+  .deck-import {
+    display: grid;
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .deck-import-row {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+  }
+  .deck-import-row .field {
+    flex: 1;
+    margin: 0;
+  }
+
+  /* Spectators and the in-app QR scanner */
+  .qr-scanner {
+    display: grid;
+    gap: 10px;
+    margin: 10px 0 14px;
+  }
+  .qr-scanner video {
+    width: 100%;
+    max-height: 46vh;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #000;
+    object-fit: cover;
+  }
+  .watch-link {
+    display: grid;
+    gap: 10px;
+    margin: 10px 0;
+  }
+  .watch-link .qr-code {
+    width: 170px;
+    height: 170px;
+  }
+
+  /* Keyboard shortcuts */
+  .shortcut-list {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 14px;
+    margin: 10px 0;
+    font-size: 13px;
+  }
+  .shortcut-list dt {
+    white-space: nowrap;
+  }
+  .shortcut-list dd {
+    margin: 0;
+    color: var(--soft-text);
+  }
+  kbd {
+    display: inline-block;
+    min-width: 22px;
+    padding: 2px 6px;
+    border: 1px solid var(--control-line);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: var(--control-background);
+    font: inherit;
+    font-size: 11px;
+    text-align: center;
+  }
+  .home-stats-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 10px;
+  }
+}

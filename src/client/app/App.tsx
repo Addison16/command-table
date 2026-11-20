@@ -1,5 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { archenemyOutcome, archenemySetup, defaultSetup, teamOf, turnOrder } from '../../shared/game.js';
+import {
+  archenemyOutcome,
+  archenemySetup,
+  defaultSetup,
+  teamOf,
+  turnOrder,
+  twoHeadedGiantSetup,
+} from '../../shared/game.js';
+import { planeEntry } from '../../shared/planes.js';
 import { canUndoRoomAction } from '../../shared/permissions.js';
 import { type Game, type Roll } from '../../shared/schema.js';
 import {
@@ -13,6 +21,7 @@ import {
   startFreshAfterRecovery,
   takeOver,
   isHost,
+  isSpectator,
   openHome,
   resumeLocal,
 } from './store.js';
@@ -37,6 +46,10 @@ const Utilities = lazy(() => import('../features/Utilities.js').then((m) => ({ d
 const GroupLife = lazy(() => import('../features/GroupLife.js').then((m) => ({ default: m.GroupLife })));
 const SchemeDeck = lazy(() => import('../features/SchemeDeck.js').then((m) => ({ default: m.SchemeDeck })));
 const GameMenu = lazy(() => import('../features/GameMenu.js').then((m) => ({ default: m.GameMenu })));
+const RecordWinner = lazy(() => import('../features/GameMenu.js').then((m) => ({ default: m.RecordWinner })));
+const StatsSheet = lazy(() => import('../features/Stats.js').then((m) => ({ default: m.StatsSheet })));
+const CardLookup = lazy(() => import('../features/CardLookup.js').then((m) => ({ default: m.CardLookup })));
+const Planechase = lazy(() => import('../features/Planechase.js').then((m) => ({ default: m.Planechase })));
 const HistorySheet = lazy(() => import('../features/GameMenu.js').then((m) => ({ default: m.HistorySheet })));
 const Settings = lazy(() => import('../features/Settings.js').then((m) => ({ default: m.Settings })));
 const JoinSheet = lazy(() => import('../features/Rooms.js').then((m) => ({ default: m.JoinSheet })));
@@ -198,6 +211,68 @@ export function App() {
         state.room.me.status === 'approved' &&
         state.room?.undoRoomRevision === state.room?.revision &&
         canUndoRoomAction(game, state.room.me.id, state.room.me.seatId, isHost())));
+  const canNext =
+    !!game &&
+    game.settings.turnTracking &&
+    isHost() &&
+    !state.readOnly &&
+    state.pending === 0 &&
+    game.status === 'active' &&
+    eligible.length > 0 &&
+    (mode === 'local' || state.connected);
+  const nextTurn = () => {
+    if (!game || !canNext) return;
+    // A shared turn is recorded on the first active seat of that side.
+    const current = eligible.findIndex(
+      (id) =>
+        id === game.turn.playerId ||
+        (game.teams?.find((team) => team.includes(id)) ?? []).includes(game.turn.playerId ?? ''),
+    );
+    void act({ type: 'turn', playerId: eligible[(current + 1) % eligible.length], advance: true });
+  };
+  // Desktop shortcuts act only on the bare board, never while typing or in a sheet.
+  const shortcuts = useRef({ active: false, undo: () => {}, next: () => {}, players: [] as string[] });
+  shortcuts.current = {
+    active: state.screen === 'board' && !!game && !hasSheet && !fallen.length,
+    undo: () => {
+      if (canUndo && state.pending === 0) void act({ type: 'undo' });
+    },
+    next: nextTurn,
+    players: game?.order ?? [],
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const keys = shortcuts.current;
+      const target = event.target;
+      if (
+        !keys.active ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        (target instanceof HTMLElement &&
+          (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      )
+        return;
+      const key = event.key.toLowerCase();
+      const command = event.ctrlKey || event.metaKey;
+      if (command && key !== 'z') return;
+      if (command && event.shiftKey) return;
+      const seat = /^[1-8]$/.test(key) ? keys.players[Number(key) - 1] : undefined;
+      if (key === 'z' ? command : key === 'u') keys.undo();
+      else if (command) return;
+      else if (key === 'n') keys.next();
+      else if (key === 'd') open('utilities');
+      else if (key === 'm') open('menu');
+      else if (key === 'h') open('history');
+      else if (key === '?') open('settings');
+      else if (seat) open(`player:${seat}`);
+      else return;
+      event.preventDefault();
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [open]);
   if (!state.ready)
     return (
       <main className="loading">
@@ -376,6 +451,16 @@ export function App() {
                   >
                     Archenemy · 1 vs 3
                   </button>
+                  <button
+                    className="text-button"
+                    disabled={state.recovery}
+                    onClick={() => void startLocal(twoHeadedGiantSetup()).catch(report)}
+                  >
+                    Two-Headed Giant · 2 vs 2
+                  </button>
+                  <button className="text-button" onClick={() => open('stats')}>
+                    Playgroup stats
+                  </button>
                 </div>
                 <p className="home-mode-hint">
                   Play on one device offline, or bring everyone’s screens together in a shared room.
@@ -433,9 +518,32 @@ export function App() {
                     ? 'THE ARCHENEMY CONQUERED THE TEAM'
                     : game.archenemy
                       ? `ARCHENEMY · 1 VS ${teamOf(game).length}`
-                      : game.order.length === 1
-                        ? 'PRACTICE TABLE'
-                        : `${game.order.length} PLAYERS AT THE TABLE`}
+                      : game.teams
+                        ? `TWO-HEADED GIANT · ${game.teams.length} TEAMS`
+                        : game.order.length === 1
+                          ? 'PRACTICE TABLE'
+                          : `${game.order.length} PLAYERS AT THE TABLE`}
+                {(game.planechase || game.markers.dayNight) && (
+                  <span className="table-chips">
+                    {game.markers.dayNight && (
+                      <button
+                        onClick={() => open('utilities')}
+                        aria-label={`It is ${game.markers.dayNight}. Open utilities`}
+                      >
+                        {game.markers.dayNight === 'day' ? '☀ DAY' : '☾ NIGHT'}
+                      </button>
+                    )}
+                    {game.planechase && (
+                      <button
+                        data-testid="plane-chip"
+                        onClick={() => open('planechase')}
+                        aria-label={`Current plane: ${planeEntry(game.planechase.current)?.name ?? 'none'}. Open Planechase`}
+                      >
+                        ⟁ {(planeEntry(game.planechase.current)?.name ?? 'PLANECHASE').toUpperCase()}
+                      </button>
+                    )}
+                  </span>
+                )}
               </span>
               <span className="awake-indicator">☀ Screen awake</span>
               <span>
@@ -443,9 +551,11 @@ export function App() {
                   ? `${state.pending} CHANGE${state.pending === 1 ? '' : 'S'} AWAITING CONFIRMATION`
                   : game.status === 'ended'
                     ? 'GAME ENDED'
-                    : mode === 'room'
-                      ? 'EACH PLAYER CONTROLS THEIR OWN SEAT'
-                      : 'MAY YOUR DRAWS BE KIND'}
+                    : isSpectator()
+                      ? 'WATCHING · READ ONLY'
+                      : mode === 'room'
+                        ? 'EACH PLAYER CONTROLS THEIR OWN SEAT'
+                        : 'MAY YOUR DRAWS BE KIND'}
               </span>
             </div>
             <Board openPlayer={openPlayer} openCommander={openCommander} openSchemes={openSchemes} />
@@ -460,7 +570,7 @@ export function App() {
                 title={
                   !canUndo
                     ? 'Undo is unavailable: only the latest safe gameplay action can be reversed.'
-                    : 'Undo latest action'
+                    : 'Undo latest action (U)'
                 }
                 onClick={() => void act({ type: 'undo' })}
               >
@@ -469,25 +579,7 @@ export function App() {
               </button>
               {game.settings.turnTracking && (
                 <>
-                  <button
-                    className="next-turn"
-                    disabled={
-                      !isHost() ||
-                      state.readOnly ||
-                      state.pending > 0 ||
-                      game.status !== 'active' ||
-                      !eligible.length ||
-                      (mode === 'room' && !state.connected)
-                    }
-                    onClick={() =>
-                      void act({
-                        type: 'turn',
-                        playerId:
-                          eligible[(eligible.indexOf(game.turn.playerId ?? '') + 1) % eligible.length],
-                        advance: true,
-                      })
-                    }
-                  >
+                  <button className="next-turn" disabled={!canNext} title="Next turn (N)" onClick={nextTurn}>
                     <Icon name="arrow" />
                     <span>Next turn</span>
                   </button>
@@ -570,12 +662,17 @@ export function App() {
               onClose={close}
               onReplay={(roll) => showRoll(state.confirmed!, roll, true)}
               onGroupLife={() => open('group-life')}
+              open={open}
             />
           )}
           {sheet === 'group-life' && game && <GroupLife key={game.id} onClose={close} />}
           {sheet === 'schemes' && game?.archenemy && <SchemeDeck onClose={close} />}
           {sheet === 'menu' && game && <GameMenu onClose={close} open={open} />}
           {sheet === 'history' && game && <HistorySheet onClose={close} />}
+          {sheet === 'winner' && game && <RecordWinner key={game.id} onClose={close} />}
+          {sheet === 'stats' && <StatsSheet onClose={close} />}
+          {sheet === 'card-lookup' && <CardLookup onClose={close} />}
+          {sheet === 'planechase' && game && <Planechase onClose={close} />}
           {sheet === 'settings' && <Settings onClose={close} />}
           {sheet === 'layout' && <TableLayout onClose={close} />}
           {presentation && state.screen === 'board' && (

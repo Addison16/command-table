@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { defaultSetup } from '../../shared/game.js';
+import { defaultSetup, standingWinners, teammates, teamOf } from '../../shared/game.js';
 import { type Game } from '../../shared/schema.js';
 import {
   act,
@@ -15,16 +15,29 @@ import {
 import { gameExport, parseImport } from '../storage/repository.js';
 import { ask, choose, downloadText, Icon, Sheet } from '../components/ui.js';
 import { GameRecapSheet } from './GameRecap.js';
+import { canRedoRoomAction } from '../../shared/permissions.js';
+import '../styles/extras.css';
 export function HistorySheet({ onClose }: { onClose: () => void }) {
   const game = useApp((s) => s.game)!,
-    mode = useApp((s) => s.mode);
+    mode = useApp((s) => s.mode),
+    room = useApp((s) => s.room),
+    connected = useApp((s) => s.connected),
+    pending = useApp((s) => s.pending);
+  // In a room, only the player who just undid something may put it back.
+  const roomRedo =
+    mode === 'room' &&
+    !!room?.canRedo &&
+    connected &&
+    pending === 0 &&
+    room.me.status === 'approved' &&
+    canRedoRoomAction(game, room.me.id, room.me.seatId, isHost());
   return (
     <Sheet
       title="The story so far"
       description="The latest 200 game actions. Dice live in Utilities."
       onClose={onClose}
     >
-      {mode === 'local' && (
+      {(mode === 'local' || roomRedo) && (
         <button
           className="secondary full"
           disabled={!game.redo.length || useApp.getState().readOnly}
@@ -32,6 +45,9 @@ export function HistorySheet({ onClose }: { onClose: () => void }) {
         >
           Redo last undone action
         </button>
+      )}
+      {mode === 'room' && !roomRedo && (
+        <p className="hint">Right after you undo something, you can redo it here.</p>
       )}
       {game.history.length ? (
         <ol className="history-list">
@@ -55,6 +71,82 @@ export function HistorySheet({ onClose }: { onClose: () => void }) {
           <span>Your game actions will appear here.</span>
         </div>
       )}
+    </Sheet>
+  );
+}
+/** Who won, when life totals alone do not say: alternate wins, concessions, a draw. */
+export function RecordWinner({ onClose }: { onClose: () => void }) {
+  const game = useApp((s) => s.confirmed)!,
+    pending = useApp((s) => s.pending),
+    connected = useApp((s) => s.connected),
+    mode = useApp((s) => s.mode),
+    readOnly = useApp((s) => s.readOnly);
+  const [winners, setWinners] = useState<string[]>(() =>
+    game.result ? game.result.winners : standingWinners(game),
+  );
+  const available = !readOnly && !pending && (mode === 'local' || connected) && isHost();
+  // Teammates win together, so choosing one chooses their whole side.
+  const side = (id: string) =>
+    game.archenemy ? (id === game.archenemy.playerId ? [id] : teamOf(game)) : teammates(game, id);
+  const save = async (command: { winners: string[]; draw?: boolean }) => {
+    await act({ type: 'declareWinner', ...command });
+    onClose();
+  };
+  return (
+    <Sheet
+      title="Record the winner"
+      description="Saved with this game and counted in your playgroup stats."
+      onClose={onClose}
+    >
+      <div className="winner-choices" role="group" aria-label="Winner">
+        {game.order.map((id) => (
+          <label key={id}>
+            <input
+              type="checkbox"
+              checked={winners.includes(id)}
+              disabled={!available}
+              onChange={(event) =>
+                setWinners(
+                  event.target.checked
+                    ? game.teams || game.archenemy
+                      ? side(id)
+                      : [...winners, id]
+                    : winners.filter((winner) => !side(id).includes(winner)),
+                )
+              }
+            />
+            {game.players[id].name}
+          </label>
+        ))}
+      </div>
+      <p className="hint">
+        {game.result?.draw
+          ? 'This game is recorded as a draw.'
+          : game.result
+            ? `Recorded: ${game.result.winners.map((id) => game.players[id].name).join(' & ')}.`
+            : 'Nothing is recorded yet. Eliminations alone are counted when only one side is left.'}
+      </p>
+      <button
+        className="primary full"
+        disabled={!available || !winners.length}
+        onClick={() => void save({ winners })}
+      >
+        <Icon name="crown" />
+        Record {winners.length > 1 ? 'winners' : 'winner'}
+      </button>
+      <button
+        className="secondary full"
+        disabled={!available}
+        onClick={() => void save({ winners: [], draw: true })}
+      >
+        Record a draw
+      </button>
+      {game.result && (
+        <button className="text-button full" disabled={!available} onClick={() => void save({ winners: [] })}>
+          Clear the recorded result
+        </button>
+      )}
+      {mode === 'room' && !isHost() && <p className="hint">The host records the result for the room.</p>}
     </Sheet>
   );
 }
@@ -126,6 +218,16 @@ export function GameMenu({ onClose, open }: { onClose: () => void; open: (sheet:
         >
           <Icon name="download" />
           <span>Share game recap</span>
+          <Icon name="arrow" />
+        </button>
+        <button disabled={!available || !isHost()} onClick={() => open('winner')}>
+          <Icon name="crown" />
+          <span>{game.result ? 'Change recorded winner' : 'Record winner'}</span>
+          <Icon name="arrow" />
+        </button>
+        <button onClick={() => open('stats')}>
+          <Icon name="people" />
+          <span>Playgroup stats</span>
           <Icon name="arrow" />
         </button>
         <button onClick={() => open('settings')}>

@@ -72,6 +72,8 @@ export function DiceCanvas({
     let frame = 0;
     let stopped = false;
     let completed = false;
+    // The moment last painted. Resizing a canvas erases it, so that frame is painted again.
+    let drawn: number | undefined;
     let quality: DiceQuality = dice.length >= 12 ? 'fast' : dice.length >= 6 ? 'balanced' : 'full';
     let slowFrames = 0;
     let hash = Array.from(seed).reduce((n, c) => Math.imul(n ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0;
@@ -117,6 +119,7 @@ export function DiceCanvas({
       return info;
     }
     function draw(elapsed: number) {
+      drawn = elapsed;
       ctx.clearRect(0, 0, width, height);
       const landscape = height < 500 && width > height;
       // Keep the tray inside the safe area, so no die settles beneath a
@@ -276,7 +279,8 @@ export function DiceCanvas({
       element.width = Math.round(width * ratio);
       element.height = Math.round(height * ratio);
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      if (completed) draw(duration);
+      // Without this, lowering the quality on a slow device left a blank frame mid-roll.
+      if (drawn !== undefined) draw(drawn);
     }
     const start = performance.now();
     function tick(now: number) {

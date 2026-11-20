@@ -1,11 +1,14 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { canUndoRoomAction } from '../shared/permissions.js';
+import { canRedoRoomAction, canUndoRoomAction } from '../shared/permissions.js';
 import {
   commandSeat,
   isRelative,
+  makePlanarDeck,
+  makePlanarRoll,
   makeRoll,
   makeSchemeDeck,
+  teamIndex,
   reduceGame,
   recoveryDeadline,
   GAME_RECOVERY_MS,
@@ -56,6 +59,7 @@ type RoomRow = {
   undo_room_revision: number | null;
   retry_floor_revision: number;
   receipt_count: number;
+  watch_code: string | null;
 };
 type MemberRow = {
   id: string;
@@ -157,7 +161,8 @@ export class RoomService {
     const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
     for (;;) {
       const code = Array.from({ length: 8 }, () => alphabet[randomInt(alphabet.length)]).join('');
-      if (!this.db.prepare('SELECT id FROM rooms WHERE code = ?').get(code)) return code;
+      if (!this.db.prepare('SELECT id FROM rooms WHERE code = ? OR watch_code = ?').get(code, code))
+        return code;
     }
   }
   private memberView(m: MemberRow): Member {
@@ -182,7 +187,9 @@ export class RoomService {
       me = all.find((member) => member.session_hash === sessionHash);
     if (!me) throw new HttpError(403, 'Your browser does not have access to this room.');
     const host = me.id === r.host_id,
-      approved = me.status === 'approved';
+      approved = me.status === 'approved',
+      // A spectator sees the table and can change nothing.
+      watching = approved || me.status === 'spectator';
     return {
       protocolVersion: PROTOCOL,
       id: r.id,
@@ -191,13 +198,14 @@ export class RoomService {
       hostId: r.host_id,
       me: this.memberView(me),
       members: all
-        .filter((m) => host || m.id === me.id || (approved && m.status === 'approved'))
+        .filter((m) => host || m.id === me.id || (watching && m.status === 'approved'))
         .map((m) => this.memberView(m)),
       seats: game.order.map((id) => ({
         id,
         name: game.players[id].name,
         taken: all.some((m) => m.seat_id === id && m.status === 'approved'),
         ...(game.archenemy?.playerId === id ? { archenemy: true } : {}),
+        ...(game.teams ? { team: teamIndex(game, id) } : {}),
       })),
       commanderEnabled: game.settings.commander,
       locked: !!r.locked,
@@ -205,10 +213,23 @@ export class RoomService {
       expiresAt: r.expires_at,
       retentionDays: this.config.roomTtlDays,
       serverTime: this.now(),
-      ...(approved ? { game } : {}),
+      ...(watching ? { game } : {}),
       ...(host ? { code: r.code, joinUrl: `${this.config.publicOrigin}/?join=${r.code}` } : {}),
+      ...(host && r.watch_code
+        ? { watchUrl: `${this.config.publicOrigin}/?join=${r.watch_code}&watch=1` }
+        : {}),
+      ...(watching ? { spectators: all.filter((m) => m.status === 'spectator').length } : {}),
+      ...(approved && game.redo.length && this.redoable(r, me.id) ? { canRedo: true } : {}),
       ...(approved && r.undo_room_revision !== null ? { undoRoomRevision: r.undo_room_revision } : {}),
     };
+  }
+  /** Redo follows only this member's own undo, with nothing saved in between. */
+  private redoable(r: RoomRow, memberId: string) {
+    const last = this.prepare('SELECT actor_id, summary FROM events WHERE room_id=? AND revision=?').get(
+      r.id,
+      r.revision,
+    ) as { actor_id: string; summary: string } | undefined;
+    return !!last && last.actor_id === memberId && last.summary.startsWith('Undid: ');
   }
   create(sessionHash: string, input: unknown, name: string, hostPlayerId?: string) {
     const roomId = randomUUID();
@@ -257,8 +278,10 @@ export class RoomService {
       throw new HttpError(400, 'Enter the eight-character room code.');
     const roomId = this.db.transaction(() => {
       this.assertSession(sessionHash);
-      const r = this.db.prepare('SELECT * FROM rooms WHERE code = ?').get(code) as RoomRow | undefined;
+      const r = this.db.prepare('SELECT * FROM rooms WHERE code = ? OR watch_code = ?').get(code, code) as
+        RoomRow | undefined;
       if (!r) throw new HttpError(404, 'No room found with that code on this server.');
+      const spectator = r.watch_code === code;
       this.room(r.id);
       const existing = this.members(r.id).find((m) => m.session_hash === sessionHash);
       if (existing?.status === 'revoked')
@@ -266,8 +289,17 @@ export class RoomService {
           403,
           'This guest identity was removed from the room. Ask the host for a new room or use a new browser identity and request approval.',
         );
-      if (existing) return r.id;
-      if (r.locked) throw new HttpError(403, 'The host has locked joining. Ask them to unlock the room.');
+      if (existing && (existing.status !== 'spectator' || spectator)) return r.id;
+      if (r.locked && !spectator)
+        throw new HttpError(403, 'The host has locked joining. Ask them to unlock the room.');
+      if (existing) {
+        // Someone who watched first and now presents the player invitation joins the lobby.
+        this.db
+          .prepare("UPDATE members SET status='pending', name=? WHERE id=?")
+          .run(nameSchema.parse(name), existing.id);
+        this.commitRoom(r, undefined, 'A guest joined the lobby', existing.id, randomUUID(), false);
+        return r.id;
+      }
       if (this.members(r.id).filter((m) => m.status !== 'revoked').length >= 40)
         throw new HttpError(
           409,
@@ -275,9 +307,16 @@ export class RoomService {
         );
       const id = randomUUID();
       this.db
-        .prepare("INSERT INTO members (id,room_id,session_hash,name,status) VALUES (?,?,?,?,'pending')")
-        .run(id, r.id, sessionHash, nameSchema.parse(name));
-      this.commitRoom(r, undefined, 'A guest joined the lobby', id, randomUUID(), false);
+        .prepare('INSERT INTO members (id,room_id,session_hash,name,status) VALUES (?,?,?,?,?)')
+        .run(id, r.id, sessionHash, nameSchema.parse(name), spectator ? 'spectator' : 'pending');
+      this.commitRoom(
+        r,
+        undefined,
+        spectator ? 'A spectator started watching' : 'A guest joined the lobby',
+        id,
+        randomUUID(),
+        false,
+      );
       return r.id;
     })();
     this.onChange(roomId);
@@ -298,10 +337,11 @@ export class RoomService {
     r.undo_room_revision = undoable ? r.revision : null;
     this.db
       .prepare(
-        'UPDATE rooms SET code=?,revision=?,game=?,host_id=?,locked=?,everyone_edits=?,updated_at=?,expires_at=?,undo_room_revision=? WHERE id=?',
+        'UPDATE rooms SET code=?,watch_code=?,revision=?,game=?,host_id=?,locked=?,everyone_edits=?,updated_at=?,expires_at=?,undo_room_revision=? WHERE id=?',
       )
       .run(
         r.code,
+        r.watch_code,
         r.revision,
         r.game,
         r.host_id,
@@ -394,6 +434,8 @@ export class RoomService {
         if (!g.players[c.playerId]) throw new HttpError(400, 'Unknown seat.');
         if (all.some((m) => m.seat_id === c.playerId && m.status === 'approved'))
           throw new HttpError(409, 'That seat is taken. Choose another seat.');
+        if (me.status === 'spectator')
+          throw new HttpError(403, 'Spectators watch only. Join with the room invitation to take a seat.');
         if (c.profile && g.status !== 'active')
           throw new HttpError(409, 'This game has ended. Ask the host to start or reopen a game.');
         this.db
@@ -470,14 +512,32 @@ export class RoomService {
       case 'rotateCode':
         r.code = this.inviteCode();
         break;
+      case 'spectators':
+        if (c.enabled) r.watch_code ??= this.inviteCode();
+        else {
+          r.watch_code = null;
+          // Closing the link also ends the access it granted.
+          this.db
+            .prepare("UPDATE members SET status='revoked' WHERE room_id=? AND status='spectator'")
+            .run(r.id);
+        }
+        break;
     }
   }
   private authorize(r: RoomRow, g: Game, me: MemberRow, c: Command) {
     if (me.status !== 'approved')
       throw new HttpError(403, 'Wait for host approval before viewing or changing the game.');
     const host = r.host_id === me.id;
-    if (c.type === 'redo')
-      throw new HttpError(400, 'Shared rooms do not support redo. Use a normal correction.');
+    if (c.type === 'redo') {
+      if (!g.redo.length || !this.redoable(r, me.id))
+        throw new HttpError(
+          409,
+          'Redo is available only right after your own undo. Use a normal correction.',
+        );
+      if (!canRedoRoomAction(g, me.id, me.seat_id, host))
+        throw new HttpError(403, 'You can redo only your own actions affecting your assigned seat.');
+      return;
+    }
     if (c.type === 'undo') {
       if (r.undo_room_revision !== r.revision || !g.undo.length)
         throw new HttpError(409, 'An intervening change makes undo unsafe. Use a normal correction.');
@@ -485,11 +545,18 @@ export class RoomService {
         throw new HttpError(403, 'You can undo only your own actions affecting your assigned seat.');
       return;
     }
-    if (c.type === 'groupLife')
-      throw new HttpError(
-        403,
-        'Group life changes are available only on one device. Each room player updates their own life.',
-      );
+    if (c.type === 'groupLife') {
+      if (!host)
+        throw new HttpError(
+          403,
+          'Only the host can apply a group life change. Update your own life instead.',
+        );
+      return;
+    }
+    // The planar deck and day/night belong to the whole table: anyone seated may use them.
+    if (['planeswalk', 'planarDie', 'dayNight'].includes(c.type) && me.seat_id) return;
+    // Taking the monarch or the initiative is a change to your own seat.
+    if (c.type === 'marker' && c.playerId && c.playerId === me.seat_id) return;
     if (
       host &&
       [
@@ -505,6 +572,12 @@ export class RoomService {
         'revealScheme',
         'shuffleSchemes',
         'abandonScheme',
+        'dayNight',
+        'declareWinner',
+        'shufflePlanes',
+        'planeswalk',
+        'planarDie',
+        'endPlanechase',
       ].includes(c.type)
     )
       return;
@@ -618,13 +691,16 @@ export class RoomService {
               groupId: env.groupId,
               newGameId: c.type === 'rematch' ? randomUUID() : undefined,
               schemeDeck: makeSchemeDeck(g, c, randomInt),
+              planarDeck: makePlanarDeck(g, c, randomInt),
+              planarRoll: makePlanarRoll(c, randomInt),
               roll:
                 c.type === 'roll'
                   ? makeRoll(g, c, { id: randomUUID(), now: this.now(), actor: me.name }, randomInt)
                   : undefined,
             };
             const next = reduceGame(g, c, ctx);
-            next.redo = [];
+            // Only an undo leaves something to redo, and only until the next change.
+            if (c.type !== 'undo') next.redo = [];
             this.commitRoom(
               r,
               next,
@@ -781,7 +857,7 @@ export class RoomService {
         preset: view.game?.settings.preset ?? 'Shared room',
         updatedAt: r.updated_at,
         expiresAt: view.expiresAt,
-        approved: view.me.status === 'approved',
+        approved: view.me.status === 'approved' || view.me.status === 'spectator',
         status: view.game?.status ?? 'active',
         recoverUntil: view.game ? recoveryDeadline(view.game) : null,
         canReopen: view.hostId === view.me.id,

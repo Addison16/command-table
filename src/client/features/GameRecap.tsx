@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Game } from '../../shared/schema.js';
 import { Field, Icon, Sheet } from '../components/ui.js';
-import { createRecap, renderRecap, type Recap } from './gameRecap.js';
+import { teamName } from '../../shared/game.js';
+import { createRecap, recordedResult, renderRecap, type Recap } from './gameRecap.js';
 import '../styles/game-recap.css';
 
 type ImageAsset = { file: File; url: string; recap: Recap };
@@ -24,7 +25,8 @@ export function GameRecapSheet({
   onClose: () => void;
 }) {
   const [at] = useState(() => capturedAt ?? Date.now());
-  const [result, setResult] = useState('');
+  // A winner recorded during the game is the starting choice.
+  const [result, setResult] = useState(() => recordedResult(game));
   const [attempt, setAttempt] = useState(0);
   const [asset, setAsset] = useState<ImageAsset | null>(null);
   const [error, setError] = useState('');
@@ -92,7 +94,7 @@ export function GameRecapSheet({
       title="Game recap"
       description={
         recap.final
-          ? 'Your final table, ready to share. Choosing a winner only changes this image.'
+          ? 'Your final table, ready to share. Choosing a winner here only changes this image.'
           : 'A snapshot of your table right now. End the game for a final recap and optional winner.'
       }
       onClose={onClose}
@@ -108,6 +110,12 @@ export function GameRecapSheet({
             <option value="">Leave result off</option>
             <option value="draw">Draw</option>
             {game.archenemy && <option value="team">The team wins</option>}
+            {game.teams?.map((team, index) => (
+              <option key={index} value={`team:${index}`}>
+                {teamName(index)} wins ({team.map((id) => game.players[id].name).join(' & ')})
+              </option>
+            ))}
+            {result === 'recorded' && <option value="recorded">Recorded winners</option>}
             {recap.players.map((player) => (
               <option key={player.id} value={player.id}>
                 {player.name}
@@ -166,6 +174,7 @@ export function GameRecapSheet({
             </li>
           ))}
         </ul>
+        {recap.life && <p>The image includes a graph of each player’s life total over the game.</p>}
       </details>
     </Sheet>
   );

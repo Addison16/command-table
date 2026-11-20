@@ -44,7 +44,7 @@ describe('archenemy setup', () => {
     expect(g.settings.preset).toBe('Archenemy');
     expect(g.archenemy).toEqual({ playerId: villain, schemes: 0, ongoing: [] });
     expect(g.order.map((id) => g.players[id].life)).toEqual([40, 40, 60, 40]);
-    expect(g.turn).toEqual({ playerId: villain, number: 1 });
+    expect(g.turn).toMatchObject({ playerId: villain, number: 1 });
     expect(setupFromGame(g).seats.map((seat) => !!seat.archenemy)).toEqual([false, false, true, false]);
   });
   it('leaves ordinary games untouched', () => {
@@ -147,7 +147,7 @@ describe('archenemy play', () => {
     expect(next.players[villain].life).toBe(60);
     expect(next.players[a].life).toBe(40);
     expect(next.archenemy).toEqual({ playerId: villain, schemes: 0, ongoing: [] });
-    expect(next.turn).toEqual({ playerId: villain, number: 1 });
+    expect(next.turn).toMatchObject({ playerId: villain, number: 1 });
   });
 });
 
